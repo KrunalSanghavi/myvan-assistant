@@ -1,6 +1,6 @@
 # MyVan Assistant
 
-Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II through an ELM327 adapter (Web Bluetooth or Web Serial). Owner: KrunalSanghavi. GitHub: `KrunalSanghavi/myvan-assistant` (private).
+Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II through an ELM327 adapter (Web Bluetooth or Web Serial). Owner: KrunalSanghavi. GitHub: `KrunalSanghavi/myvan-assistant` (public).
 
 ## Layout
 - `index.html`: the whole app in one file: CSS, markup, then one `<script>`. No build step, no framework, no runtime dependencies.
@@ -23,6 +23,9 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 
 ## Workflow (see `.claude/skills/`)
 - Backlog = GitHub issues, milestones `v2.1`, `v2.x`, `v3`. Labels: `agent-ready` (demo van is enough), `needs-van` (needs real hardware: don't mark done without the owner), `status:in-progress`.
-- `/ship-enhancement <issue#>`: branch `feat/<issue#>-<slug>`, implement, test, PR with `Closes #N`, tick ROADMAP.md.
+- `/ship-enhancement <issue#>`: branch `feat/<issue#>-<slug>` **from `main`**, implement, test, PR with `Closes #N`, tick ROADMAP.md, merge when CI passes.
 - `/release`: when a milestone's agent-ready work is merged, bump `APP_VERSION` and `sw.js` `VERSION` together, tag `vX.Y`; the Release workflow publishes notes.
-- Never commit to `main` directly; open a PR. Don't merge PRs or push tags without the owner's go-ahead unless they've said to.
+- Never commit to `main` directly; open a PR. **Merge PRs yourself once CI passes** (`gh pr merge --merge --delete-branch`). Never stack PRs: when a PR's base branch is deleted on merge, GitHub closes the dependent PR. Finish one PR before branching the next.
+- Ask the owner before release tags (other than ones they've approved), repo settings changes, or work on held issues (#12 is on hold).
+- The repo is public: commit as `KrunalSanghavi <64157848+KrunalSanghavi@users.noreply.github.com>` (set in local git config), never a work email.
+- Live site: https://krunalsanghavi.github.io/myvan-assistant/ (GitHub Pages from `main`).

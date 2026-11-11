@@ -11,5 +11,6 @@ Argument: an issue number. With none, pick the lowest-numbered open issue in the
 3. **Verify**: `npm test` must pass. For anything visual, also open the demo van via Playwright and look (screenshot at phone width). Optionally run the `verifier` agent for an independent check.
 4. **Roadmap**: tick the item in ROADMAP.md (`- [x]`) if this PR completes it.
 5. **Commit and PR**: conventional commit (`feat: ... (#N)`), push, `gh pr create --fill --body` using `.github/pull_request_template.md` with `Closes #N` and the verification boxes filled honestly. Note anything needing a real-van check.
-6. **Report** the PR link and ask the owner before merging, unless they've already said to merge.
+6. **Merge** once CI is green: `gh pr checks <PR> --watch`, then `gh pr merge <PR> --merge --delete-branch`. Fix and push if CI fails; never merge red.
+7. **Next**: `git checkout main && git pull` before starting another issue. Never base one PR on another PR's branch.
 If the issue is `needs-van`, build what you can, but leave the PR as draft and say exactly what the owner must check on the van.
