@@ -6,7 +6,7 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [ ] First real drive with the adapter: confirm every live reading, the mode 06 self-tests and the misfire counters match what the van reports. ([#1](https://github.com/KrunalSanghavi/myvan-assistant/issues/1))
 - [ ] Calibrate thresholds from your own baseline. After two weeks of drives, use your van's normal values instead of generic ones. ([#2](https://github.com/KrunalSanghavi/myvan-assistant/issues/2))
 - [ ] Odometer from the van, where supported (PID A6), so part ages update automatically. ([#3](https://github.com/KrunalSanghavi/myvan-assistant/issues/3))
-- [ ] Backup and restore of drive history, notes and maintenance to a file. ([#4](https://github.com/KrunalSanghavi/myvan-assistant/issues/4))
+- [x] Backup and restore of drive history, notes and maintenance to a file. ([#4](https://github.com/KrunalSanghavi/myvan-assistant/issues/4))
 
 ## Next: a better assistant (v2.x)
 - [ ] Freeze-frame data (mode 02): the exact conditions at the moment each code set. ([#5](https://github.com/KrunalSanghavi/myvan-assistant/issues/5))

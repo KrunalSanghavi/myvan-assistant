@@ -298,6 +298,12 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
       <h3>Units</h3>
       <div class="seg" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph</button><button id="uMet" type="button">°C · km/h</button></div>
     </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <h3>Backup and restore</h3>
+      <p class="muted" style="font-size:.88rem">Save your drive history, maintenance, code notes and settings to a file. Restore it on a new phone, or after clearing the browser's data, so nothing is lost. The demo van's simulated drives aren't included.</p>
+      <div class="row"><button class="btn" id="backupBtn" type="button">Back up to a file</button><button class="btn" id="restoreBtn" type="button">Restore from a file</button><input type="file" id="restoreIn" accept=".json,application/json" hidden aria-label="Backup file"></div>
+      <div id="backupMsg" role="status"></div>
+    </div>
     <div class="panel prose">
       <h3>What this tool can and can't see</h3>
       <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
@@ -1256,6 +1262,52 @@ function csv() {
   return [head, ...state.rows].map(r => r.join(",")).join("\n");
 }
 
+/* ---------- backup and restore ---------- */
+const BACKUP_FORMAT = 1, KEY_PREFIX = "odx:";
+function storedKeys() {
+  const out = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(KEY_PREFIX)) out.push(k.slice(KEY_PREFIX.length)); } } catch {}
+  return out;
+}
+function makeBackup() {
+  const data = {};
+  for (const k of storedKeys()) data[k] = store.get(k, null);
+  return { app: "myvan-assistant", format: BACKUP_FORMAT, appVersion: APP_VERSION, exported: new Date().toISOString(), data };
+}
+function summarizeBackup(data) {
+  const keys = Object.keys(data), m = data.maint;
+  return { drives: Array.isArray(data.drives) ? data.drives.length : 0, notes: keys.filter(k => k.startsWith("note:") && data[k]).length, parts: m && m.items ? Object.values(m.items).filter(x => x && (x.lastMi || x.lastDate)).length : 0 };
+}
+const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+const summaryText = s => `${plural(s.drives, "drive")}, ${plural(s.notes, "code note")} and maintenance dates for ${plural(s.parts, "part")}`;
+function parseBackup(text) {
+  let b;
+  try { b = JSON.parse(text); } catch { throw new Error("This file isn't a MyVan backup. It couldn't be read as a backup file."); }
+  const isObj = x => x != null && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(b) || b.app !== "myvan-assistant" || !isObj(b.data)) throw new Error("This file isn't a MyVan backup.");
+  if (!(b.format >= 1)) throw new Error("This backup file is damaged: it has no format version.");
+  if (b.format > BACKUP_FORMAT) throw new Error("This backup was made by a newer version of the app. Update the app, then try again.");
+  if (b.data.drives != null && !Array.isArray(b.data.drives)) throw new Error("The drive history in this backup is damaged.");
+  if (b.data.maint != null && !isObj(b.data.maint)) throw new Error("The maintenance data in this backup is damaged.");
+  return b;
+}
+function applyBackup(b) {
+  const old = storedKeys(), snapshot = {};
+  try { for (const k of old) snapshot[k] = localStorage.getItem(KEY_PREFIX + k); } catch {}
+  try {
+    for (const [k, v] of Object.entries(b.data)) localStorage.setItem(KEY_PREFIX + k, JSON.stringify(v));
+    for (const k of old) if (!(k in b.data)) localStorage.removeItem(KEY_PREFIX + k);
+  } catch {
+    // Put everything back the way it was so a full or blocked storage never leaves half a restore.
+    try { for (const k of storedKeys()) if (!(k in snapshot)) localStorage.removeItem(KEY_PREFIX + k); for (const k in snapshot) localStorage.setItem(KEY_PREFIX + k, snapshot[k]); } catch {}
+    throw new Error("Couldn't save the restored data because the browser's storage is full or blocked. Nothing was changed.");
+  }
+  driveCache = null; maintCache = null; units = store.get("units", "us");
+  renderMaint(); renderVehicle(); renderHealth();
+  if (state.elm) { buildTiles(); renderLive(); }
+}
+function backupNotice(kind, html) { $("#backupMsg").innerHTML = html ? `<div class="notice${kind ? " " + kind : ""}"${kind === "warn" ? ' role="alert"' : ""}>${html}</div>` : ""; }
+
 /* ---------- health: on-board self-tests (OBD-II mode 06) ---------- */
 const UAS = { 1: [1, ""], 2: [.1, ""], 3: [.01, ""], 4: [.001, ""], 5: [.0000305, ""], 6: [.000305, ""], 7: [.25, "rpm"], 8: [.01, "km/h"], 9: [1, "km/h"], 0x0A: [.122, "mV"], 0x0B: [.001, "V"], 0x0C: [.01, "V"], 0x0D: [.00390625, "mA"], 0x0E: [.001, "A"], 0x0F: [.01, "A"], 0x10: [1, "ms"], 0x11: [100, "ms"], 0x12: [1, "s"], 0x13: [1, "mΩ"], 0x14: [1, "Ω"], 0x15: [1, "kΩ"], 0x16: [.1, "°C", -40], 0x17: [.01, "kPa"], 0x18: [.0117, "kPa"], 0x19: [.079, "kPa"], 0x1A: [1, "kPa"], 0x1B: [10, "kPa"], 0x1C: [.01, "°"], 0x1D: [.5, "°"], 0x1E: [.0000305, "λ"], 0x1F: [.05, "A/F"], 0x20: [.0039062, ""], 0x21: [1, "mHz"], 0x22: [1, "Hz"], 0x23: [1, "kHz"], 0x24: [1, "counts"], 0x25: [1, "km"], 0x26: [.1, "mV/ms"], 0x27: [.01, "g/s"], 0x28: [1, "g/s"], 0x29: [.25, "Pa/s"], 0x2A: [.001, "kg/h"], 0x2B: [1, "switches"], 0x2C: [.01, "g/cyl"], 0x2D: [.01, "mg/stroke"], 0x2E: [1, ""], 0x2F: [.01, "%"], 0x30: [.001526, "%"], 0x31: [.001, "L"], 0x32: [.0000305, "in"], 0x33: [.00024414, ""], 0x34: [1, "min"], 0x35: [10, "ms"], 0x36: [.01, "g"], 0x37: [.1, "g"], 0x38: [1, "g"], 0x39: [.01, "%", -327.68] };
 function uas(id) { const b = UAS[id & 0x7F] || [1, ""]; const signed = !!(id & 0x80); return { f: b[0], unit: b[1], off: signed ? 0 : (b[2] || 0), signed }; }
@@ -1617,6 +1669,33 @@ $("#dlBtn").onclick = () => {
   a.download = "myvan-log-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv";
   document.body.appendChild(a); a.click(); a.remove();
   $("#copyMsg").textContent = inFrame ? "Downloads are blocked inside Claude. Use Copy CSV here, or download from the saved file." : "Download started.";
+};
+
+$("#backupBtn").onclick = () => {
+  const b = makeBackup(), s = summarizeBackup(b.data);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" }));
+  a.download = "myvan-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  backupNotice("", inFrame ? "Downloads are blocked inside Claude. Open the app in Chrome to save a backup." : `Backup saved with ${esc(summaryText(s))}. Keep the file somewhere safe, such as your cloud drive.`);
+};
+$("#restoreBtn").onclick = () => $("#restoreIn").click();
+$("#restoreIn").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  let b;
+  try {
+    if (f.size > 20e6) throw new Error("This file is too large to be a MyVan backup.");
+    b = parseBackup(await f.text());
+  } catch (err) { backupNotice("warn", esc(err.message) + " Your current data hasn't been changed."); return; }
+  const s = summarizeBackup(b.data), when = b.exported && !isNaN(new Date(b.exported)) ? new Date(b.exported).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "an unknown date";
+  $("#backupMsg").innerHTML = `<div class="confirm"><b>Restore this backup?</b><p style="font-size:.9rem">Made ${esc(when)}${b.appVersion ? " with version " + esc(b.appVersion) : ""}. It has ${esc(summaryText(s))}.</p><p style="font-size:.9rem">This replaces the drive history, maintenance, notes and settings on this device. Back up first if you might want them.</p><div class="row"><button class="btn danger" id="restoreYes" type="button">Replace my data</button><button class="btn" id="restoreNo" type="button">Cancel</button></div></div>`;
+  $("#restoreNo").onclick = () => backupNotice("", "");
+  $("#restoreYes").onclick = () => {
+    try { applyBackup(b); backupNotice("", `Restored ${esc(summaryText(s))}.`); }
+    catch (err) { backupNotice("warn", esc(err.message)); }
+  };
 };
 
 /* ---------- installable app ---------- */
