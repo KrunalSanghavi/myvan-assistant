@@ -639,7 +639,7 @@ function decodeDtcs(bytes, can) {
 
 /* ---------- demo vehicle (emulates an ELM327 on a CAN bus) ---------- */
 const demo = {
-  t0: 0, cleared: false, clearedAt: 0, runtime0: 1260, odo0: 84012.4,
+  t0: 0, cleared: false, clearedAt: 0, runtime0: 1260, odo0: 84012.4, engineOff: false,
   sup: new Set([0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x15, 0x19, 0x1F, 0x2F, 0x33, 0x3C, 0x3D, 0x42, 0x44, 0x46, 0x34, 0x38, 0xA6]),
   vin: "5FNRL6H9XJBDEMO01",
   // Snapshot stored with the demo's EVAP code: warm idle with bank 2 running lean.
@@ -651,6 +651,8 @@ const demo = {
     const r = a => (Math.random() - .5) * 2 * a;
     const speed = Math.max(0, 74 * ramp + r(1.2) * ramp);
     const rpm = drive ? 900 + speed * 15 + r(40) : 690 + r(18);
+    if (this.engineOff) return { rpm: 0, speed: 0, load: 0, tps: 13.7, map: 99, maf: 0, timing: 0, ect: 88, iat: 27, amb: 14, cat1: 300, cat2: 300,
+      stft1: 0, ltft1: 1.6, stft2: 0, ltft2: 13.3, lambda: 1, af1: 1, af2: 1, o2b1s2: .45, o2b2s2: .45, fuel: 41, ecuv: 12.4, batt: 12.5, baro: 99, runtime: 0, odo: this.odo0 };
     return {
       rpm, speed, load: drive ? 28 + ramp * 22 + r(3) : 21 + r(1.2), tps: drive ? 14 + ramp * 12 + r(1) : 13.7,
       map: drive ? 38 + ramp * 16 + r(2) : 31 + r(1), maf: drive ? 6 + ramp * 16 + r(1) : 3.7 + r(.2),
@@ -696,6 +698,7 @@ const demo = {
     if (cmd === "03") return dtcResp(0x43, c.stored);
     if (cmd === "07") return dtcResp(0x47, c.pending);
     if (cmd === "0A") return dtcResp(0x4A, c.permanent);
+    if (cmd === "04" && this.vals().rpm > 300) return "7F0422"; // conditions not correct: engine running
     if (cmd === "04") { this.cleared = true; this.clearedAt = performance.now(); return "44"; }
     if (cmd.startsWith("06") && cmd.length === 4) {
       const mid = parseInt(cmd.slice(2), 16), keys = Object.keys(this.m06).map(Number);
@@ -739,7 +742,7 @@ const demo = {
   }
 };
 function demoTransport() {
-  demo.t0 = performance.now(); demo.cleared = false;
+  demo.t0 = performance.now(); demo.cleared = false; demo.engineOff = false;
   const t = { name: "Demo van", onData: null, onClose: null };
   t.write = s => { setTimeout(() => t.onData && t.onData(demo.emulate(s.trim()) + "\r\r>"), 18 + Math.random() * 20); };
   t.close = () => {};
@@ -860,7 +863,7 @@ async function disconnect(msg) {
   const t = state.conn, elm = state.elm;
   // Ask the adapter to drop into low-power mode before letting go (ignored by adapters that don't support it).
   if (elm && state.mode !== "demo") { try { await Promise.race([elm.send("ATLP", 800), sleep(900)]); } catch {} }
-  state.conn = null; state.elm = null; state.drive = null;
+  state.conn = null; state.elm = null; state.drive = null; clearOpen = false; clearMsg = ''; renderClearConfirm();
   if (t) { t.onClose = null; try { await t.close(); } catch {} }
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
@@ -948,10 +951,51 @@ function freezeHtml(code) {
   if (!rows) return "";
   return `<div class="group" id="freezeBox"><span class="label">Conditions when this code set</span><div class="watch">${rows}</div><p class="muted" style="font-size:.85rem">The engine computer took this snapshot the moment it stored ${esc(code)}. When you test a fix, try to drive under similar conditions (speed, temperature and load) so the self-test runs again.</p></div>`;
 }
+/* Clearing codes: only with the engine off and the ignition ON. */
+const ENGINE_ON_RPM = 300;
+const engineRunning = () => V.rpm != null && V.rpm > ENGINE_ON_RPM;
+let clearOpen = false, clearMsg = "", clearShownRunning = null;
+async function freshRpm() {
+  try {
+    const m = parseMsgs(await state.elm.send("010C", 2500)).find(m => m.bytes[0] === 0x41 && m.bytes[1] === 0x0C);
+    if (m && m.bytes.length >= 4) { const v = P.rpm.f(m.bytes.slice(2)); pushVal("rpm", v); return v; }
+  } catch {}
+  return null;
+}
+function renderClearConfirm() {
+  const c = $("#clearConfirm");
+  if (!clearOpen) { c.hidden = true; c.innerHTML = ""; clearShownRunning = null; return; }
+  const running = engineRunning();
+  clearShownRunning = running;
+  c.hidden = false;
+  const msg = clearMsg ? `<p class="notice warn" role="alert" style="font-size:.9rem">${esc(clearMsg)}</p>` : "";
+  c.innerHTML = running
+    ? `<div class="confirm" id="clearEngineOn"><b>Turn the engine off first</b>
+        <p style="font-size:.9rem">Codes can only be cleared with the engine off and the ignition on. The engine is running now (${esc(fmt("rpm"))}).</p>
+        <ol style="margin:0;padding-left:20px;font-size:.9rem;display:flex;flex-direction:column;gap:4px">
+          <li>Park and turn the engine off.</li>
+          <li>Without your foot on the brake, press the power button <b>twice</b>, so the dash lights up but the engine stays off (ignition ON). One press (Accessory) usually isn't enough for the engine computer to answer.</li>
+          <li>Keep this screen open. It moves on by itself once the engine is off.</li>
+        </ol>${msg}
+        <div class="row">${state.mode === "demo" ? '<button class="btn" id="demoEngineOff">Turn the demo engine off</button>' : ""}<button class="btn" id="clearNo">Cancel</button></div></div>`
+    : `<div class="confirm" id="clearReady"><b>Clear all stored and pending codes?</b>
+        <p style="font-size:.9rem">Engine is off. This turns off the check-engine light and resets every readiness monitor to "Not ready". Write the codes down first. If the problem is still there, the codes will come back.</p>${msg}
+        <div class="row"><button class="btn danger" id="clearYes">Clear codes</button><button class="btn" id="clearNo">Cancel</button></div></div>`;
+  $("#clearNo").onclick = () => { clearOpen = false; clearMsg = ""; renderClearConfirm(); };
+  const y = $("#clearYes"); if (y) y.onclick = clearCodes;
+  const d = $("#demoEngineOff"); if (d) d.onclick = () => { demo.engineOff = true; d.disabled = true; d.textContent = "Turning off…"; };
+}
 async function clearCodes() {
   if (!state.elm) return;
-  try { await state.elm.send("04", 6000); } catch {}
-  $("#clearConfirm").hidden = true;
+  const y = $("#clearYes"); if (y) { y.disabled = true; y.textContent = "Checking engine…"; }
+  const rpm = await freshRpm();
+  if (rpm == null) { clearMsg = "Couldn't confirm the engine is off, so nothing was cleared. Check the ignition is ON and try again."; renderClearConfirm(); return; }
+  if (rpm > ENGINE_ON_RPM) { clearMsg = "The engine started again, so nothing was cleared."; renderClearConfirm(); return; }
+  let refused = false;
+  try { refused = parseMsgs(await state.elm.send("04", 6000)).some(m => m.bytes[0] === 0x7F && m.bytes[1] === 0x04); }
+  catch { refused = true; }
+  if (refused) { clearMsg = "The engine computer didn't accept the clear command. Make sure the engine is off and the ignition is ON, then try again."; renderClearConfirm(); return; }
+  clearOpen = false; clearMsg = ""; renderClearConfirm();
   await readCodes();
 }
 
@@ -1062,7 +1106,7 @@ function afterSample() {
 
 /* ---------- rendering ---------- */
 let raf = 0;
-function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "vehicle") renderVehicle(); if (sheetRefresh) sheetRefresh(); }); }
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "vehicle") renderVehicle(); if (clearOpen && engineRunning() !== clearShownRunning) renderClearConfirm(); if (sheetRefresh) sheetRefresh(); }); }
 
 function renderConnect(busy) {
   const box = $("#connectBox");
@@ -1717,9 +1761,7 @@ $("#discBtn").onclick = () => disconnect("");
 $("#readBtn").onclick = readCodes;
 $("#clearBtn").onclick = () => {
   if (!state.elm) { renderCodes("Connect to the van first."); return; }
-  const c = $("#clearConfirm"); c.hidden = false;
-  c.innerHTML = `<div class="confirm"><b>Clear all stored and pending codes?</b><p style="font-size:.9rem">This turns off the check-engine light and resets every readiness monitor to "Not ready". Write the codes down first. If the problem is still there, the codes will come back. Do this with the engine off and the ignition on.</p><div class="row"><button class="btn danger" id="clearYes">Clear codes</button><button class="btn" id="clearNo">Cancel</button></div></div>`;
-  $("#clearYes").onclick = clearCodes; $("#clearNo").onclick = () => c.hidden = true;
+  clearOpen = true; clearMsg = ""; renderClearConfirm();
 };
 $("#lookupForm").onsubmit = e => {
   e.preventDefault();
