@@ -24,10 +24,9 @@ Power use: when you disconnect, the app sends `ATLP` to put the adapter into low
 
 ## Install on Android
 
-1. In this repository, go to **Settings → Pages**, set the source to **Deploy from a branch**, choose `main` and `/ (root)`, and save.
-2. On your phone, open `https://<your-username>.github.io/myvan-assistant/` in Chrome.
-3. Tap **Install app** in the header, or use **⋮ → Install app**.
-4. Open it once while online. After that it works without signal.
+1. On your phone, open **https://krunalsanghavi.github.io/myvan-assistant/** in Chrome. (It's served by GitHub Pages from `main`, so every merge goes live within a minute or two.)
+2. Tap **Install app** in the header, or use **⋮ → Install app**.
+3. Open it once while online. After that it works without signal.
 
 On iPhone, use the Bluefy browser, because Safari has no Web Bluetooth.
 
@@ -42,7 +41,7 @@ npm run serve   # http://localhost:8080
 ```
 
 - **Backlog:** every roadmap item is a GitHub issue under the `v2.1`, `v2.x` or `v3` milestone. `agent-ready` issues can be built and verified with the demo van; `needs-van` issues need the real vehicle.
-- **Changes:** one branch and pull request per issue (`Closes #N`). CI runs `npm test` on every PR.
+- **Changes:** one branch and pull request per issue (`Closes #N`), always branched from `main`. CI runs `npm test` on every PR, and PRs are merged once it passes.
 - **Releases:** bump `APP_VERSION` in `index.html` and `VERSION` in `sw.js` together (CI checks they match), then push a tag such as `v2.1`. The Release workflow publishes the notes. Bumping `VERSION` is what makes installed copies refresh.
 - **Claude Code:** `CLAUDE.md` describes the codebase; `/ship-enhancement <issue>` and `/release` run the workflow.
 
