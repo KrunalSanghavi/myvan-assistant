@@ -1,6 +1,6 @@
 {
-  "name": "Tardis Monitor",
-  "short_name": "Tardis Monitor",
+  "name": "MyVan Assistant",
+  "short_name": "MyVan",
   "description": "Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey Elite",
   "start_url": "./",
   "scope": "./",

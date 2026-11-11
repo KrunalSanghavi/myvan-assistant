@@ -1,5 +1,5 @@
-// Tardis Monitor offline cache. Bump VERSION when you upload a new index.html.
-const VERSION = "tardis-monitor-v2.0";
+// MyVan Assistant offline cache. Bump VERSION when you upload a new index.html.
+const VERSION = "myvan-assistant-v2.0";
 const CORE = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

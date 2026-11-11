@@ -1,4 +1,4 @@
-# Tardis Monitor
+# MyVan Assistant
 
 A live health monitor and diagnostic assistant for a 2018 Honda Odyssey Elite (3.5L V6, 10-speed). It runs in Chrome as an installable app on Android or a laptop and talks to the van through an ELM327-compatible OBD-II adapter.
 
@@ -25,7 +25,7 @@ Power use: when you disconnect, the app sends `ATLP` to put the adapter into low
 ## Install on Android
 
 1. In this repository, go to **Settings → Pages**, set the source to **Deploy from a branch**, choose `main` and `/ (root)`, and save.
-2. On your phone, open `https://<your-username>.github.io/tardis-monitor/` in Chrome.
+2. On your phone, open `https://<your-username>.github.io/myvan-assistant/` in Chrome.
 3. Tap **Install app** in the header, or use **⋮ → Install app**.
 4. Open it once while online. After that it works without signal.
 
@@ -52,8 +52,6 @@ Edit `index.html`, then change `VERSION` at the top of `sw.js` so installed copi
 - Live data and codes work on other gasoline cars sold in the US from 1996 on, but the normal ranges and guides are tuned for this van.
 
 All data (drive history, notes, maintenance) stays on the device in browser storage.
-
-TARDIS is a trademark of the BBC. This is a personal project with no affiliation.
 
 ## License
 
