@@ -437,7 +437,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.3"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.3.1"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1433,17 +1433,37 @@ function traffic(cmd, resp) {
 }
 
 /* ---------- sheets ---------- */
-let sheetRefresh = null, lastFocus = null;
+/* Panels stack (a guide opened from a graph sits on top of it) and each one is a history entry,
+   so the phone's back button closes the top panel before it leaves a screen. */
+let sheetRefresh = null;
+const sheets = [];
+const topSheet = () => sheets.length ? sheets[sheets.length - 1].scrim : document;
 function openSheet(html, refresh) {
-  lastFocus = document.activeElement;
-  $("#sheetRoot").innerHTML = `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
-  $("#scrim").onclick = e => { if (e.target.id === "scrim") closeSheet(); };
-  $("#sheetRoot .close").onclick = closeSheet;
+  const lastFocus = document.activeElement;
+  if (sheets.length) sheets[sheets.length - 1].scrim.hidden = true;
+  const scrim = document.createElement("div");
+  scrim.className = "scrim";
+  scrim.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  $("#sheetRoot").appendChild(scrim);
+  scrim.addEventListener("click", e => { if (e.target === scrim) closeSheet(); });
+  const close = scrim.querySelector(".close");
+  if (close) close.onclick = () => closeSheet();
+  sheets.push({ scrim, refresh: refresh || null, lastFocus });
   sheetRefresh = refresh || null;
-  $("#sheetRoot .close").focus();
+  history.pushState(Object.assign({}, history.state, { sheet: sheets.length }), "");
+  if (close) close.focus();
 }
-function closeSheet() { $("#sheetRoot").innerHTML = ""; sheetRefresh = null; if (lastFocus) try { lastFocus.focus(); } catch {} }
-document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#scrim")) closeSheet(); });
+// fromHistory: the back button already moved history; otherwise step history back to match.
+function closeSheet(fromHistory) {
+  const s = sheets.pop(); if (!s) return;
+  s.scrim.remove();
+  const below = sheets[sheets.length - 1];
+  if (below) below.scrim.hidden = false;
+  sheetRefresh = below ? below.refresh : null;
+  try { if (s.lastFocus && s.lastFocus.isConnected) s.lastFocus.focus(); } catch {}
+  if (!fromHistory && history.state && history.state.sheet) history.back();
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && sheets.length) closeSheet(); });
 
 function watchHtml(keys) {
   return keys.filter(k => P[k]).map(k => `<div>${esc(P[k].name)}: <b>${V[k] != null ? fmt(k) : "—"}</b></div>`).join("");
@@ -1463,12 +1483,12 @@ function openGuide(code) {
     <div class="group"><label class="label" for="noteBox">Your notes from the service manual</label><textarea id="noteBox" placeholder="Specs, connector numbers, test results…">${esc(store.get("note:" + code, ""))}</textarea></div>
     <p class="muted" style="font-size:.84rem">General diagnostic guidance for this engine, not Honda's official procedure. For exact specifications and pinpoint tests, see <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>.</p>`;
   openSheet(html, () => { const w = $("#watchBox"); if (w) w.innerHTML = watchHtml(g.watch); });
-  $("#sheetRoot").querySelectorAll(".steps input").forEach(cb => cb.onchange = () => {
+  topSheet().querySelectorAll(".steps input").forEach(cb => cb.onchange = () => {
     const i = +cb.dataset.i, cur = new Set(store.get("chk:" + code, []));
     cb.checked ? cur.add(i) : cur.delete(i);
     store.set("chk:" + code, [...cur]); cb.closest("li").classList.toggle("done", cb.checked);
   });
-  $("#resetSteps").onclick = () => { store.set("chk:" + code, []); $("#sheetRoot").querySelectorAll(".steps input").forEach(cb => { cb.checked = false; cb.closest("li").classList.remove("done"); }); };
+  $("#resetSteps").onclick = () => { store.set("chk:" + code, []); topSheet().querySelectorAll(".steps input").forEach(cb => { cb.checked = false; cb.closest("li").classList.remove("done"); }); };
   $("#noteBox").oninput = e => store.set("note:" + code, e.target.value);
 }
 function openParam(key) {
@@ -1960,8 +1980,16 @@ function openComponent(id) {
 let current = "live", parentView = "live";
 const TAB_OF = { live: "live", readings: "live", health: "health", codes: "codes", more: "more", checks: "more", log: "more" };
 const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
-function show(v) {
+// Each screen change is a history entry ({ v, d: depth }), so back returns to the previous screen.
+// Tapping Home rewinds to the first entry; back on Home leaves the app.
+function show(v, fromHistory) {
   if (!TAB_OF[v]) v = "live";
+  if (!fromHistory) {
+    while (sheets.length) closeSheet(true);
+    const st = history.state || { v: "live", d: 0 };
+    if (v === "live" && st.d > 0) { history.go(-st.d); return; }   // popstate renders Home
+    if (v !== current) history.pushState({ v, d: (st.d || 0) + 1, sheet: 0 }, "");
+  }
   if (TAB_OF[v] !== v && current !== v) parentView = TAB_OF[current] === current ? current : parentView;
   current = v;
   const tab = TAB_OF[v], sub = tab !== v;
@@ -1975,7 +2003,13 @@ function show(v) {
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
 }
-$("#backBtn").onclick = () => show(parentView);
+$("#backBtn").onclick = () => { if (history.state && history.state.d > 0) history.back(); else show(parentView); };
+history.replaceState({ v: "live", d: 0, sheet: 0 }, "");
+window.addEventListener("popstate", e => {
+  const st = e.state || { v: "live", d: 0, sheet: 0 };
+  while (sheets.length > (st.sheet || 0)) closeSheet(true);
+  if (st.v !== current) show(st.v, true);
+});
 $("#connPill").onclick = () => show("more");
 $("#goConnect").onclick = () => show("live");
 $("#rvList").onclick = () => { readView = "list"; store.set("readView", "list"); buildReadings(); };
