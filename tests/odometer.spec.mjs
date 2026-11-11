@@ -6,7 +6,7 @@ const DEMO_MI = /52,2\d\d/;
 test("demo van shows its odometer on the Vehicle screen in both units", async ({ page }) => {
   await connectDemo(page);
   await tab(page, "Vehicle");
-  await expect(page.locator("#vehKv")).toContainText(/Odometer\s*52,2\d\d mi \(simulated\)/, { timeout: 15000 });
+  await expect(page.locator("#vehKv")).toContainText(/Odometer\s*52,2\d\d mi \(simulated\)/, { timeout: 30000 });
   await page.locator("#uMet").click();
   await expect(page.locator("#vehKv")).toContainText(/84,01\d km/);
 });

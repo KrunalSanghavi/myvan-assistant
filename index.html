@@ -641,6 +641,8 @@ const demo = {
   t0: 0, cleared: false, clearedAt: 0, runtime0: 1260, odo0: 84012.4,
   sup: new Set([0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x15, 0x19, 0x1F, 0x2F, 0x33, 0x3C, 0x3D, 0x42, 0x44, 0x46, 0x34, 0x38, 0xA6]),
   vin: "5FNRL6H9XJBDEMO01",
+  // Snapshot stored with the demo's EVAP code: warm idle with bank 2 running lean.
+  ff: { rpm: 705, speed: 0, load: 23.1, ect: 89, iat: 31, map: 32, maf: 3.8, tps: 13.7, stft1: 0.8, ltft1: 1.6, stft2: 3.1, ltft2: 12.5, timing: 11.5, ecuv: 14.1, runtime: 1834 },
   vals() {
     const t = (performance.now() - this.t0) / 1000;
     const ph = t % 70, drive = ph > 22 && ph < 60;
@@ -705,6 +707,20 @@ const demo = {
       const recs = this.m06[mid];
       if (!recs) return "NO DATA";
       return "46" + recs.map(r => toHex([mid, r[0], r[1], ...u16(r[2]), ...u16(r[3]), ...u16(r[4])])).join("");
+    }
+    if (cmd.startsWith("02") && cmd.length === 6) {
+      const pid = parseInt(cmd.slice(2, 4), 16);
+      if (this.cleared || cmd.slice(4) !== "00") return "NO DATA";
+      const pids = [0x02, ...Object.keys(this.ff).map(k => P[k].pid)];
+      if (pid % 0x20 === 0) {
+        const b = [0, 0, 0, 0];
+        for (const q of pids) if (q > pid && q <= pid + 32) { const i = q - pid - 1; b[i >> 3] |= 0x80 >> (i & 7); }
+        if (pids.some(q => q > pid + 32)) b[3] |= 1;
+        return "42" + hex2(pid) + "00" + toHex(b);
+      }
+      if (pid === 0x02) return "420200" + toHex(c.stored[0] || [0, 0]);
+      const k = Object.keys(this.ff).find(k => P[k].pid === pid);
+      return k ? "42" + hex2(pid) + "00" + toHex(P[k].enc(this.ff[k])) : "NO DATA";
     }
     if (cmd.startsWith("01") && cmd.length === 4) {
       const pid = parseInt(cmd.slice(2), 16);
@@ -896,9 +912,40 @@ async function readCodes() {
     res[key] = [...new Set(res[key])];
   }
   state.codes = res; state.codesAt = new Date();
+  try { await readFreezeFrame(); } catch {}
   $("#readBtn").disabled = false;
   try { await readMonitors(); } catch {}
   renderCodes(); updateBadges();
+}
+/* freeze frame (mode 02, frame 0): conditions at the moment the engine computer stored a code */
+const FF_KEYS = ["rpm", "speed", "load", "ect", "iat", "amb", "map", "maf", "tps", "stft1", "ltft1", "stft2", "ltft2", "timing", "ecuv", "runtime"];
+async function readFreezeFrame() {
+  state.freeze = null;
+  if (!state.elm) return;
+  const ask = async pid => parseMsgs(await state.elm.send("02" + hex2(pid) + "00", 3000)).find(m => m.bytes[0] === 0x42 && m.bytes[1] === pid);
+  let m; try { m = await ask(0x02); } catch { return; }
+  if (!m || m.bytes.length < 5 || (!m.bytes[3] && !m.bytes[4])) return; // 0000 means no freeze frame stored
+  const code = dtcStr(m.bytes[3], m.bytes[4]), sup = new Set();
+  for (const base of [0x00, 0x20, 0x40]) {
+    if (base && !sup.has(base)) break;
+    let r; try { r = await ask(base); } catch { break; }
+    if (!r || r.bytes.length < 7) break;
+    for (let i = 0; i < 32; i++) if (r.bytes[3 + (i >> 3)] & (0x80 >> (i & 7))) sup.add(base + i + 1);
+  }
+  const vals = {};
+  for (const k of FF_KEYS) {
+    const p = P[k];
+    if (sup.size && !sup.has(p.pid)) continue;
+    try { const r = await ask(p.pid); if (r && r.bytes.length >= 3 + p.n) vals[k] = p.f(r.bytes.slice(3)); } catch {}
+  }
+  state.freeze = { code, vals, at: new Date() };
+}
+function freezeHtml(code) {
+  const f = state.freeze;
+  if (!f || f.code !== code) return "";
+  const rows = FF_KEYS.filter(k => f.vals[k] != null).map(k => `<div>${esc(P[k].name)}: <b>${esc(fmt(k, f.vals[k]))}</b></div>`).join("");
+  if (!rows) return "";
+  return `<div class="group" id="freezeBox"><span class="label">Conditions when this code set</span><div class="watch">${rows}</div><p class="muted" style="font-size:.85rem">The engine computer took this snapshot the moment it stored ${esc(code)}. When you test a fix, try to drive under similar conditions (speed, temperature and load) so the self-test runs again.</p></div>`;
 }
 async function clearCodes() {
   if (!state.elm) return;
@@ -1045,6 +1092,7 @@ function renderConnect(busy) {
 0100 … 01A0       supported readings
 01xx              live data, odometer (A6)
 03 / 07 / 0A      stored / pending / permanent
+02xx00            freeze frame
 04                clear codes
 0902  ATRV        VIN, battery voltage</div>
     </div>
@@ -1147,7 +1195,7 @@ function updateBadges() {
 }
 function codeItem(code, kind) {
   const g = guideFor(code);
-  return `<div class="item"><span class="code">${esc(code)}</span><div class="body"><b>${esc(g.t)}</b><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span><span class="muted" style="font-size:.82rem">${kind}</span></div></div><button class="btn small" data-g="${esc(code)}">Troubleshoot</button></div>`;
+  return `<div class="item"><span class="code">${esc(code)}</span><div class="body"><b>${esc(g.t)}</b><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span><span class="muted" style="font-size:.82rem">${kind}</span>${state.freeze && state.freeze.code === code ? '<span class="chip low">Freeze frame</span>' : ""}</div></div><button class="btn small" data-g="${esc(code)}">Troubleshoot</button></div>`;
 }
 function renderCodes(msg) {
   const out = $("#codesOut");
@@ -1227,6 +1275,7 @@ function openGuide(code) {
   const html = `
     <header><div class="t">${isCode ? `<span class="code" style="align-self:flex-start">${esc(code)}</span>` : ""}<h2>${esc(g.t)}</h2><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span>${g.generic ? '<span class="chip low">General guidance</span>' : ""}</div></div><button class="close" aria-label="Close">×</button></header>
     <div class="block prose"><p>${esc(g.what)}</p></div>
+    ${freezeHtml(code)}
     <div class="group"><span class="label">Common causes</span><div class="block"><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:.93rem">${g.causes.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div></div>
     <div class="group"><div class="row" style="justify-content:space-between"><span class="label">Steps, simplest first</span><button class="link" id="resetSteps" style="font-size:.85rem">Reset</button></div>
       <ol class="steps">${g.steps.map((s, i) => `<li class="${done.includes(i) ? "done" : ""}"><label><input type="checkbox" data-i="${i}" ${done.includes(i) ? "checked" : ""}><span class="n">${i + 1}</span><span class="txt">${esc(s)}</span></label></li>`).join("")}</ol></div>
