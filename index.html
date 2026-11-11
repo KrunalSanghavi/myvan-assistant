@@ -1,233 +1,285 @@
 <title>MyVan Assistant</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F3F4F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1113" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
-/* Layout: frosted header and tab bar floating over a grouped background; content in rounded panels; readings set large and light. */
+/* Instrument-panel look: flat bordered cards on a quiet ground, big Space Grotesk numbers, cyan / amber / orange-red status.
+   Light by default, dark when the phone is in dark mode (Auto) or when forced from More > Appearance. */
 :root{
-  --bg:#F2F2F7; --surface:#FFFFFF; --surface-2:#F2F2F7; --fill:#E9E9EE; --line:#DCDCE1; --fg:#1D1D1F; --muted:#6E6E73;
-  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#E6F0FC;
-  --ok:#248A3D; --ok-bg:#E3F3E7; --warn:#C25400; --warn-bg:#FFF0DE; --crit:#D70015; --crit-bg:#FDE6E8;
-  --band:#E2F2E6; --track:#E5E5EA; --spark:#0071E3; --scrim:rgba(0,0,0,.3);
-  --glass:rgba(242,242,247,.78); --glass-bar:rgba(250,250,252,.82);
-  --shadow:0 1px 1px rgba(0,0,0,.03),0 3px 12px rgba(0,0,0,.05);
-  --f-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,"Segoe UI",sans-serif;
-  --f-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,"Segoe UI",sans-serif;
+  --bg:#F3F4F1; --surface:#FFFFFF; --surface-2:#ECEFEA; --fill:#ECEFEA; --line:#DCE0DA; --fg:#111416; --muted:#56616A;
+  --accent:#0B7187; --accent-ink:#FFFFFF; --accent-soft:#DDF0F4;
+  --ok:#0B7187; --ok-bg:#DDF0F4; --warn:#8F5A00; --warn-bg:#FFF3DB; --warn-line:#F0D59C; --crit:#B93418; --crit-bg:#FCE5DF; --crit-line:#F2B8A9;
+  --band:rgba(11,113,135,.13); --track:#E4E8E2; --spark:#0B7187; --scrim:rgba(10,14,16,.38); --bar:#FFFFFF;
+  --f-display:"Space Grotesk","Inter",system-ui,"Segoe UI",sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --bg:#000000; --surface:#1C1C1E; --surface-2:#2C2C2E; --fill:#2C2C2E; --line:#38383A; --fg:#F5F5F7; --muted:#98989D;
-  --accent:#2997FF; --accent-ink:#FFFFFF; --accent-soft:#0B2744;
-  --ok:#30D158; --ok-bg:#0F2E19; --warn:#FF9F0A; --warn-bg:#33230A; --crit:#FF453A; --crit-bg:#3A1311;
-  --band:#123420; --track:#2C2C2E; --spark:#2997FF; --scrim:rgba(0,0,0,.6);
-  --glass:rgba(0,0,0,.72); --glass-bar:rgba(22,22,24,.82); --shadow:none; color-scheme:dark }}
+  --bg:#0E1113; --surface:#171B1F; --surface-2:#232A30; --fill:#232A30; --line:#2A3238; --fg:#F2F4F5; --muted:#A0ABB4;
+  --accent:#4CC3D9; --accent-ink:#071316; --accent-soft:#12303A;
+  --ok:#4CC3D9; --ok-bg:#12303A; --warn:#F2B33D; --warn-bg:#2A2214; --warn-line:#4A3A1A; --crit:#FF7759; --crit-bg:#3A1A14; --crit-line:#5C2A20;
+  --band:rgba(76,195,217,.15); --track:#2A3238; --spark:#7FD6E6; --scrim:rgba(0,0,0,.62); --bar:#121619; color-scheme:dark }}
 :root[data-theme="dark"]{
-  --bg:#000000; --surface:#1C1C1E; --surface-2:#2C2C2E; --fill:#2C2C2E; --line:#38383A; --fg:#F5F5F7; --muted:#98989D;
-  --accent:#2997FF; --accent-ink:#FFFFFF; --accent-soft:#0B2744;
-  --ok:#30D158; --ok-bg:#0F2E19; --warn:#FF9F0A; --warn-bg:#33230A; --crit:#FF453A; --crit-bg:#3A1311;
-  --band:#123420; --track:#2C2C2E; --spark:#2997FF; --scrim:rgba(0,0,0,.6);
-  --glass:rgba(0,0,0,.72); --glass-bar:rgba(22,22,24,.82); --shadow:none; color-scheme:dark }
+  --bg:#0E1113; --surface:#171B1F; --surface-2:#232A30; --fill:#232A30; --line:#2A3238; --fg:#F2F4F5; --muted:#A0ABB4;
+  --accent:#4CC3D9; --accent-ink:#071316; --accent-soft:#12303A;
+  --ok:#4CC3D9; --ok-bg:#12303A; --warn:#F2B33D; --warn-bg:#2A2214; --warn-line:#4A3A1A; --crit:#FF7759; --crit-bg:#3A1A14; --crit-line:#5C2A20;
+  --band:rgba(76,195,217,.15); --track:#2A3238; --spark:#7FD6E6; --scrim:rgba(0,0,0,.62); --bar:#121619; color-scheme:dark }
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.47;-webkit-font-smoothing:antialiased;letter-spacing:-.005em}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
-:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:2px}
-.app{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 calc(100px + env(safe-area-inset-bottom,0px))}
-h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.12;letter-spacing:-.02em}
-h2{font-size:1.75rem;font-weight:700}
-h3{font-size:1.08rem;font-weight:600;letter-spacing:-.01em}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 50%,transparent);outline-offset:2px}
+.app{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 calc(96px + env(safe-area-inset-bottom,0px))}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15;letter-spacing:-.01em}
+h2{font-size:1.6rem;font-weight:600}
+h3{font-size:1.06rem;font-weight:600}
 p{margin:0}
 a{color:var(--accent)}
 .muted{color:var(--muted)}
 .mono{font-family:var(--f-mono)}
-.label{font-size:.78rem;color:var(--muted);font-weight:600;letter-spacing:0}
+.label{font-size:.75rem;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.hint{font-size:.8rem;text-align:center}
 
-/* header */
-.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;display:flex;align-items:center;gap:10px;padding-block:10px;margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding-inline:max(16px,env(safe-area-inset-left,0px));background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--line)}
+/* top bar */
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;min-height:60px;padding-top:env(safe-area-inset-top,0px);margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding-inline:max(16px,env(safe-area-inset-left,0px)) max(12px,env(safe-area-inset-right,0px));background:var(--bg);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-.brand img{width:30px;height:30px;border-radius:7px;flex:none}
-.brand div{display:flex;flex-direction:column;min-width:0}
-.brand h1{font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
-.brand span{font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:.76rem;font-weight:600;background:var(--fill);color:var(--muted);white-space:nowrap}
-.pill i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
-.pill.on{background:var(--ok-bg);color:var(--ok)}
-.pill.demo{background:var(--accent-soft);color:var(--accent)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;background:var(--fill);border-radius:980px;padding:9px 18px;font-weight:500;cursor:pointer;min-height:40px;transition:filter .15s,transform .1s}
-.btn:hover{filter:brightness(.96)}
+.brand img{width:30px;height:30px;border-radius:8px;flex:none}
+.top h1{font-size:1.2rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.back{width:44px;height:44px;margin-left:-10px;border:0;background:none;border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+.back svg{width:22px;height:22px}
+.pill{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:999px;font-size:.8rem;font-weight:500;background:var(--surface);border:1px solid var(--line);color:var(--fg);white-space:nowrap;cursor:pointer;flex:none}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:block}
+.pill.on i,.pill.demo i{background:var(--ok)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:0 16px;font-weight:600;cursor:pointer;min-height:44px;transition:filter .15s,transform .1s}
+.btn:hover{filter:brightness(.97)}
 .btn:active{transform:scale(.98)}
-.btn.primary{background:var(--accent);color:var(--accent-ink)}
-.btn.danger{background:var(--crit-bg);color:var(--crit)}
-.btn.small{min-height:32px;padding:5px 13px;font-size:.84rem}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn.danger{background:transparent;color:var(--crit)}
+.btn.warnbtn{background:var(--warn);color:var(--bg);border-color:transparent}
+.btn.small{min-height:36px;padding:0 12px;font-size:.86rem;border-radius:10px}
 .btn:disabled{opacity:.45;cursor:default}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:500;cursor:pointer}
 .link:hover{text-decoration:underline}
 
 [hidden]{display:none!important}
-section.view{padding-top:22px;display:flex;flex-direction:column;gap:22px}
-.panel{background:var(--surface);border-radius:16px;padding:18px;box-shadow:var(--shadow)}
+section.view{padding-top:16px;display:flex;flex-direction:column;gap:16px}
+.stack{display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
 .notice{border-radius:12px;padding:12px 14px;background:var(--fill);font-size:.9rem}
-.notice.warn{background:var(--warn-bg)}
+.notice.warn{background:var(--warn-bg);border:1px solid var(--warn-line)}
 .notice b{font-weight:600}
 
 /* connect */
-.connect{display:grid;gap:18px;grid-template-columns:1fr}
+.connect{display:grid;gap:16px;grid-template-columns:1fr}
 @media (min-width:820px){.connect{grid-template-columns:1.25fr 1fr;align-items:start}}
-.connect h2{font-size:2.1rem}
-.choices{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
-.choice{display:flex;gap:14px;align-items:center;text-align:left;background:none;border:0;padding:14px 16px;cursor:pointer;width:100%}
-.choice + .choice{border-top:.5px solid var(--line)}
+.connect h2{font-size:2rem}
+.choices{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.choice{display:flex;gap:14px;align-items:center;text-align:left;background:none;border:0;padding:14px 16px;cursor:pointer;width:100%;min-height:64px}
+.choice + .choice{border-top:1px solid var(--line)}
 .choice:hover{background:var(--surface-2)}
-.choice .ico{flex:none;width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.choice .ico{flex:none;width:40px;height:40px;border-radius:12px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center}
 .choice .ico svg{width:22px;height:22px}
-.choice:last-child .ico{background:var(--muted)}
+.choice:last-child .ico{background:var(--fill);color:var(--fg)}
 .choice > div{flex:1;min-width:0}
 .choice b{display:block;font-weight:600}
 .choice span{font-size:.86rem;color:var(--muted)}
 .choice::after{content:"›";font-size:1.4rem;color:var(--muted);line-height:1}
-.choice select{border:0;background:var(--fill);border-radius:6px;padding:1px 4px}
+.choice select{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:1px 4px}
 .port{font-family:var(--f-mono);font-size:.78rem;line-height:1.45;background:var(--surface-2);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;color:var(--muted)}
-.log-lines{font-family:var(--f-mono);font-size:.78rem;max-height:200px;overflow:auto;background:var(--surface-2);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all}
+.log-lines{font-family:var(--f-mono);font-size:.78rem;max-height:220px;overflow:auto;background:var(--surface-2);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all}
 
-/* summary */
+/* status card */
 .strip{display:flex;flex-direction:column;gap:12px}
-.hero{background:var(--surface);border-radius:18px;padding:18px 20px;box-shadow:var(--shadow);display:flex;gap:16px;align-items:center}
-.hero-ico{flex:none;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--ok-bg);color:var(--ok)}
-.hero-ico svg{width:24px;height:24px}
-.hero.warn .hero-ico{background:var(--warn-bg);color:var(--warn)}
-.hero.crit .hero-ico{background:var(--crit-bg);color:var(--crit)}
-.hero .t{flex:1;min-width:0}
-.hero h3{font-size:1.3rem;font-weight:700}
-.hero p{color:var(--muted);font-size:.9rem}
-.cells{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-@media (min-width:700px){.cells{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.cell{background:var(--surface);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left;border:0}
-button.cell{cursor:pointer}
-.cell .v{font-family:var(--f-display);font-size:1.45rem;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.cell .s{font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:.74rem;font-weight:600;padding:2px 8px;border-radius:980px;white-space:nowrap}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.hero .kicker{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ok)}
+.hero .kicker svg{width:16px;height:16px}
+.hero.warn{background:var(--warn-bg);border-color:var(--warn-line)}
+.hero.warn .kicker{color:var(--warn)}
+.hero.crit{background:var(--crit-bg);border-color:var(--crit-line)}
+.hero.crit .kicker{color:var(--crit)}
+.hero h3{font-size:1.5rem;font-weight:600;line-height:1.15}
+.hero p{color:var(--muted)}
+.hero.warn .btn.go{background:var(--warn);color:var(--bg);border-color:transparent}
+.hero.crit .btn.go{background:var(--crit);color:#fff;border-color:transparent}
+.hero .btn.alt{background:transparent;border-color:currentColor;color:var(--fg)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:.74rem;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
 .chip.ok{background:var(--ok-bg);color:var(--ok)}
 .chip.warn,.chip.med{background:var(--warn-bg);color:var(--warn)}
 .chip.crit,.chip.stop,.chip.high{background:var(--crit-bg);color:var(--crit)}
 .chip.low,.chip.na{background:var(--fill);color:var(--muted)}
 
+/* navigation rows (Home, More) */
+.rows{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.nrow{display:flex;align-items:center;gap:12px;min-height:54px;padding:0 16px;border:0;background:none;text-align:left;cursor:pointer;width:100%}
+.nrow + .nrow{border-top:1px solid var(--line)}
+.nrow:hover{background:var(--surface-2)}
+.nrow > span:first-child{flex:1;min-width:0}
+.nrow .v{font-weight:600;font-variant-numeric:tabular-nums}
+.nrow .v.warn{color:var(--warn)} .nrow .v.crit{color:var(--crit)} .nrow .v.muted{color:var(--muted);font-weight:500}
+.nrow::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-top:2px solid var(--muted);transform:rotate(45deg);margin-right:4px;flex:none}
+
 /* tiles */
-.group{display:flex;flex-direction:column;gap:10px}
-.group > .label{padding-left:4px;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em}
+.group{display:flex;flex-direction:column;gap:8px}
+.group > .label{padding-left:4px}
 .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media (min-width:700px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (min-width:980px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.tile{background:var(--surface);border:0;border-radius:16px;padding:14px 14px 10px;display:flex;flex-direction:column;gap:6px;text-align:left;cursor:pointer;min-width:0;box-shadow:var(--shadow);transition:transform .12s,box-shadow .2s}
+@media (min-width:1180px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;text-align:left;cursor:pointer;min-width:0;transition:transform .12s}
 .tile:hover{transform:translateY(-1px)}
-.tile.warn{box-shadow:inset 0 0 0 1.5px var(--warn),var(--shadow)}
-.tile.crit{box-shadow:inset 0 0 0 1.5px var(--crit),var(--shadow)}
+.tile.warn{background:var(--warn-bg);border-color:var(--warn-line)}
+.tile.crit{background:var(--crit-bg);border-color:var(--crit-line)}
 .tile .hd{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-.tile .name{font-size:.8rem;color:var(--muted);font-weight:500;line-height:1.25;min-height:2.5em}
-.tile .st{font-size:.7rem;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;color:var(--ok)}
-.tile .st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.tile .name{font-size:.82rem;color:var(--muted);font-weight:500;line-height:1.25;min-width:0}
+.tile .st{font-size:.7rem;font-weight:600;white-space:nowrap;color:var(--ok)}
 .tile .st.none{color:var(--muted)}
-.tile .st.none::before{opacity:.5}
 .tile.warn .st{color:var(--warn)}
 .tile.crit .st{color:var(--crit)}
 .tile .val{display:flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}
-.tile .val b{font-family:var(--f-display);font-size:2.05rem;font-weight:300;line-height:1;letter-spacing:-.03em}
-.tile.warn .val b{color:var(--warn);font-weight:400}
-.tile.crit .val b{color:var(--crit);font-weight:400}
+.tile .val b{font-family:var(--f-display);font-size:2rem;font-weight:600;line-height:1}
+.tile.warn .val b{color:var(--warn)}
+.tile.crit .val b{color:var(--crit)}
 .tile .val small{font-size:.8rem;color:var(--muted)}
-.range{position:relative;height:4px;border-radius:2px;background:var(--track);margin-top:2px}
-.range .band{position:absolute;top:0;bottom:0;background:var(--ok);opacity:.35;border-radius:2px}
-.range .mark{position:absolute;top:-4px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2.5px solid var(--fg);transform:translateX(-6px);transition:left .3s ease}
-.tile.warn .range .mark{border-color:var(--warn)}
-.tile.crit .range .mark{border-color:var(--crit)}
-.tile svg.spark{width:100%;height:30px;display:block;margin-top:2px}
+.range{display:none}
+.tile svg.spark{width:100%;height:34px;display:block}
 .spark .bandr{fill:var(--band)}
-.spark .line{fill:none;stroke:var(--spark);stroke-width:1.6;stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.spark .area{fill:var(--spark);opacity:.08}
-.spark .seg-warn{fill:none;stroke:var(--warn);stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke}
-.spark .seg-crit{fill:none;stroke:var(--crit);stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.spark .line{fill:none;stroke:var(--spark);stroke-width:1.8;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.spark .area{fill:var(--spark);opacity:.07}
+.spark .seg-warn{fill:none;stroke:var(--warn);stroke-width:2.6;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.spark .seg-crit{fill:none;stroke:var(--crit);stroke-width:2.6;stroke-linecap:round;vector-effect:non-scaling-stroke}
 .spark .dot{stroke:var(--spark);stroke-width:6;stroke-linecap:round;vector-effect:non-scaling-stroke}
 .spark .dot.warn{stroke:var(--warn)} .spark .dot.crit{stroke:var(--crit)}
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.78rem;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
 
-/* lists */
-.list{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
-.item{padding:14px 16px;display:flex;gap:14px;align-items:center}
-.item + .item{border-top:.5px solid var(--line)}
-.item .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.code{font-family:var(--f-mono);font-weight:500;font-size:.98rem;background:var(--fill);border-radius:8px;padding:4px 8px;white-space:nowrap}
-.empty{background:var(--surface);border-radius:16px;padding:22px;color:var(--muted);text-align:center;box-shadow:var(--shadow)}
-.lookup{display:flex;gap:8px;flex-wrap:wrap}
-.lookup input{flex:1;min-width:0;max-width:220px;text-transform:uppercase;font-family:var(--f-mono);border:0;background:var(--fill);border-radius:10px;padding:8px 12px;min-height:40px}
-.confirm{background:var(--crit-bg);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+/* reading rows (All readings, list view) */
+.rlist{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.rrow{display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 12px 8px 16px;border:0;background:none;text-align:left;cursor:pointer;width:100%}
+.rrow + .rrow{border-top:1px solid var(--line)}
+.rrow .nm{flex:1;min-width:0;font-size:.92rem}
+.rrow .nm small{display:block;font-size:.75rem;font-weight:600;color:var(--warn)}
+.rrow.crit .nm small{color:var(--crit)}
+.rrow svg.spark{width:64px;height:24px;flex:none}
+.rrow .rv{width:64px;text-align:right;font-family:var(--f-display);font-size:1.06rem;font-weight:600;font-variant-numeric:tabular-nums}
+.rrow .ru{width:34px;font-size:.75rem;color:var(--muted)}
+.rrow.warn{background:var(--warn-bg)} .rrow.warn .rv{color:var(--warn)}
+.rrow.crit{background:var(--crit-bg)} .rrow.crit .rv{color:var(--crit)}
 
-/* vehicle */
-.kv{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr);gap:10px 20px;font-size:.93rem;margin:0}
+/* lists */
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.item{padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.item + .item{border-top:1px solid var(--line)}
+.item .body{flex:1 1 200px;min-width:0;display:flex;flex-direction:column;gap:4px}
+.code{font-family:var(--f-mono);font-weight:600;font-size:.95rem;background:var(--fill);border-radius:8px;padding:5px 8px;white-space:nowrap}
+.empty{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px;color:var(--muted);text-align:center}
+.lookup{display:flex;gap:8px;flex-wrap:wrap}
+.lookup input{flex:1;min-width:0;max-width:220px;text-transform:uppercase;font-family:var(--f-mono);border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:0 12px;min-height:44px}
+.confirm{background:var(--crit-bg);border:1px solid var(--crit-line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.confirm .btn.danger{background:var(--crit);color:#fff;border-color:transparent}
+
+/* vehicle / more */
+.kv{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);gap:10px 16px;font-size:.93rem;margin:0}
+.kv .mono{font-size:.84rem;word-break:break-all}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-word;text-align:right}
 .monitors{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
 .mon{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:.88rem}
-.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px}
-.seg button{border:0;background:none;padding:6px 16px;cursor:pointer;font-weight:500;font-size:.88rem;border-radius:7px}
-.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg{display:inline-flex;background:var(--fill);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:none;padding:0 14px;min-height:36px;cursor:pointer;font-weight:600;font-size:.88rem;border-radius:9px;flex:1}
+.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg.full{display:flex}
 .prose{display:flex;flex-direction:column;gap:10px;max-width:68ch;font-size:.93rem}
 .prose ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px}
+details.help{background:var(--surface);border:1px solid var(--line);border-radius:18px}
+details.help + details.help{margin-top:-8px}
+details.help summary{min-height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;cursor:pointer;list-style:none;font-weight:500}
+details.help summary::-webkit-details-marker{display:none}
+details.help summary::after{content:"+";font-size:1.3rem;color:var(--muted)}
+details.help[open] summary::after{content:"–"}
+details.help .prose{padding:0 16px 16px}
+.conn{display:flex;align-items:center;gap:12px}
+.conn .ico{width:44px;height:44px;border-radius:12px;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;flex:none}
+.conn .ico svg{width:22px;height:22px}
+.conn > span{flex:1;min-width:0}
 
-/* tabs */
-nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--glass-bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(4px,env(safe-area-inset-left,0px));padding-right:max(4px,env(safe-area-inset-right,0px))}
-nav.tabs button{flex:1;max-width:140px;background:none;border:0;padding:7px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.66rem;font-weight:500;color:var(--muted);cursor:pointer;position:relative}
-nav.tabs svg{width:24px;height:24px}
+/* tabs: bottom bar on phones, side rail on wide screens */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--bar);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(4px,env(safe-area-inset-left,0px));padding-right:max(4px,env(safe-area-inset-right,0px))}
+nav.tabs button{flex:1;max-width:160px;background:none;border:0;padding:8px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:.74rem;font-weight:600;color:var(--muted);cursor:pointer;position:relative}
+nav.tabs .ic{width:56px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+nav.tabs svg{width:22px;height:22px}
 nav.tabs button[aria-selected="true"]{color:var(--accent)}
-nav.tabs .badge{position:absolute;top:3px;left:calc(50% + 7px);min-width:17px;height:17px;border-radius:9px;background:var(--crit);color:#fff;font-size:.66rem;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 4px}
+nav.tabs button[aria-selected="true"] .ic{background:var(--accent-soft)}
+nav.tabs .badge{position:absolute;top:5px;left:calc(50% + 10px);min-width:18px;height:18px;border-radius:9px;background:var(--crit);color:#fff;font-size:.68rem;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 5px}
+nav.tabs .railbrand{display:none}
+@media (min-width:1000px){
+  nav.tabs{top:0;right:auto;width:232px;flex-direction:column;justify-content:flex-start;gap:4px;padding:20px 16px;border-top:0;border-right:1px solid var(--line)}
+  nav.tabs .railbrand{display:flex;align-items:center;gap:10px;padding:0 8px 18px;font-family:var(--f-display);font-weight:700;font-size:1.2rem}
+  nav.tabs .railbrand img{width:32px;height:32px;border-radius:9px}
+  nav.tabs button{flex:none;max-width:none;flex-direction:row;justify-content:flex-start;gap:12px;padding:0 12px;min-height:46px;border-radius:12px;font-size:.95rem}
+  nav.tabs .ic{width:auto;height:auto;background:none!important}
+  nav.tabs button[aria-selected="true"]{background:var(--accent-soft)}
+  nav.tabs .badge{position:static;margin-left:auto}
+  body{padding-left:232px}
+  .app{padding-bottom:40px}
+  .top .brand img{display:none}
+}
 
-/* sheet */
+/* sheet: full screen on phones, centered panel on wide screens */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:50;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
-.sheet{background:var(--bg);width:100%;max-width:680px;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:20px max(18px,env(safe-area-inset-right,0px)) calc(26px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px;animation:rise .28s cubic-bezier(.2,.8,.2,1)}
-@media (min-width:760px){.scrim{align-items:center}.sheet{border-radius:16px;max-height:86%}}
+.sheet{background:var(--bg);width:100%;height:100%;max-width:720px;overflow:auto;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px;animation:rise .25s cubic-bezier(.2,.8,.2,1)}
+@media (min-width:760px){.scrim{align-items:center}.sheet{height:auto;max-height:88%;border-radius:20px;border:1px solid var(--line)}}
 @keyframes fade{from{opacity:0}}
 @keyframes rise{from{transform:translateY(24px);opacity:0}}
-.sheet header{display:flex;gap:12px;align-items:flex-start}
+.sheet header{position:sticky;top:0;z-index:2;background:var(--bg);display:flex;gap:12px;align-items:flex-start;padding:calc(12px + env(safe-area-inset-top,0px)) 0 12px;border-bottom:1px solid var(--line)}
 .sheet header .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.sheet h2{font-size:1.6rem}
-.sheet .block{background:var(--surface);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
-.close{border:0;background:var(--fill);color:var(--muted);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:1.1rem;flex:none;line-height:1}
-.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;background:var(--surface);border-radius:14px;overflow:hidden}
-.steps li + li{border-top:.5px solid var(--line)}
-.steps li label{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;cursor:pointer}
+.sheet h2{font-size:1.5rem}
+.sheet .block{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.close{border:1px solid var(--line);background:var(--surface);color:var(--fg);width:40px;height:40px;border-radius:12px;cursor:pointer;font-size:1.2rem;flex:none;line-height:1}
+.bigval{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.bigval b{font-family:var(--f-display);font-size:3rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.bigval.warn b{color:var(--warn)} .bigval.crit b{color:var(--crit)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stats div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column}
+.stats span{font-size:.75rem;color:var(--muted)}
+.stats b{font-family:var(--f-display);font-size:1.1rem;font-weight:600;font-variant-numeric:tabular-nums}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.steps li + li{border-top:1px solid var(--line)}
+.steps li label{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;cursor:pointer;min-height:48px}
 .steps li .n{font-size:.8rem;color:var(--muted);min-width:1.2em;padding-top:1px;font-variant-numeric:tabular-nums}
 .steps input{width:20px;height:20px;margin-top:0;flex:none;accent-color:var(--accent)}
 .steps li.done label span.txt{color:var(--muted);text-decoration:line-through}
 .watch{display:flex;flex-wrap:wrap;gap:8px}
-.watch div{background:var(--surface);border-radius:10px;padding:7px 11px;font-size:.85rem;font-variant-numeric:tabular-nums}
+.watch div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 11px;font-size:.85rem;font-variant-numeric:tabular-nums}
 .watch b{font-weight:600}
-textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(--surface);padding:12px;resize:vertical}
-.bigspark{width:100%;height:120px;display:block}
+textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px;resize:vertical}
+.bigspark{width:100%;height:150px;display:block}
+
 /* health */
 .hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
-.hcard{background:var(--surface);border:0;border-radius:16px;padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;text-align:left;cursor:pointer;min-width:0}
-.hcard .hd{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.hcard{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:8px;text-align:left;cursor:pointer;min-width:0}
+.hcard .hd{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
 .hcard .hd > span:first-child{display:flex;flex-direction:column;min-width:0}
 .hcard small{color:var(--muted);font-size:.8rem}
 .hcard .line{font-size:.86rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.hcard.warn{box-shadow:inset 0 0 0 1.5px var(--warn),var(--shadow)}
-.hcard.crit{box-shadow:inset 0 0 0 1.5px var(--crit),var(--shadow)}
+.hcard.warn{border-color:var(--warn-line)}
+.hcard.crit{border-color:var(--crit-line)}
 .meter{display:block;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
 .meter i{display:block;height:100%;background:var(--ok);border-radius:3px}
 .hcard.warn .meter i,.meter.warn i{background:var(--warn)}
 .hcard.crit .meter i,.meter.crit i{background:var(--crit)}
 .mlab{font-size:.75rem;color:var(--muted);margin-top:-4px}
 .item .body .meter{margin-top:5px;max-width:220px}
-.inp{border:0;background:var(--fill);border-radius:10px;padding:8px 10px;min-height:38px;width:100%;min-width:0}
+.inp{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;min-height:40px;width:100%;min-width:0}
 #m-odo{max-width:160px}
 .mlist{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--surface-2)}
-.mrow + .mrow{border-top:.5px solid var(--line)}
-.mrow summary{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 12px;cursor:pointer;list-style:none}
+.mrow + .mrow{border-top:1px solid var(--line)}
+.mrow summary{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 12px;cursor:pointer;list-style:none;min-height:48px}
 .mrow summary::-webkit-details-marker{display:none}
 .mform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 12px 12px}
 @media (min-width:700px){.mform{grid-template-columns:repeat(4,minmax(0,1fr))}}
@@ -235,85 +287,105 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
 .trend{width:100%;height:90px;display:block}
 .spark .thr{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;opacity:.8}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.hero .hero-ico{display:none}
+.hero .t{display:flex;flex-direction:column;gap:4px}
+.hero > .btn{align-self:flex-start}
 </style>
 
 <div class="app">
   <header class="top">
-    <div class="brand"><img src="icon-192.png" alt=""><div><h1>MyVan Assistant</h1><span>2018 Honda Odyssey Elite · 3.5L V6</span></div></div>
-    <span class="pill" id="connPill"><i></i><span id="connText">Not connected</span></span>
-    <button class="btn small primary" id="installBtn" hidden>Install app</button>
-    <button class="btn small" id="discBtn" hidden>Disconnect</button>
+    <button class="back" id="backBtn" type="button" aria-label="Back" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="brand"><img src="icon-192.png" alt=""><h1 id="topTitle">MyVan Assistant</h1></div>
+    <button class="pill" id="connPill" type="button"><i></i><span id="connText">Not connected</span></button>
   </header>
 
-  <!-- LIVE -->
+  <!-- HOME -->
   <section class="view" id="view-live">
     <div id="connectBox"></div>
-    <div id="liveBox" hidden>
+    <div id="liveBox" class="stack" hidden>
       <div class="strip" id="strip"></div>
-      <div id="groups" style="display:flex;flex-direction:column;gap:22px;margin-top:18px"></div>
+      <div class="tiles" id="homeTiles"></div>
+      <div class="rows" id="homeRows"></div>
+      <p class="muted hint">Tap any gauge for its graph. Pin more gauges to Home from there.</p>
     </div>
+  </section>
+
+  <!-- ALL READINGS (from Home or More) -->
+  <section class="view" id="view-readings" hidden>
+    <div class="row between"><span class="muted" id="readCount" style="font-size:.9rem"></span>
+      <div class="seg" role="group" aria-label="View"><button id="rvList" type="button">List</button><button id="rvTiles" type="button">Tiles</button></div></div>
+    <div id="groups" class="stack"></div>
   </section>
 
   <!-- HEALTH -->
   <section class="view" id="view-health" hidden>
-    <div><h2>Health</h2><p class="muted" style="margin-top:4px;font-size:.92rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p></div>
-    <div id="healthOut" style="display:flex;flex-direction:column;gap:22px"></div>
-    <div class="group"><span class="label">Parts age and maintenance</span><div class="panel" id="maintOut" style="display:flex;flex-direction:column;gap:12px"></div></div>
+    <p class="muted" style="font-size:.9rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p>
+    <div id="healthOut" class="stack"></div>
+    <div class="group"><span class="label">Parts age and maintenance</span><div class="panel stack" id="maintOut" style="gap:12px"></div></div>
     <p class="muted" style="font-size:.84rem;max-width:68ch">Grades are estimates to help you plan, not a guarantee. Self-test limits come from the engine computer itself. Trend warnings get more reliable after a couple of weeks of normal driving. Confirm with the troubleshooting steps or a mechanic before buying parts.</p>
   </section>
 
   <!-- CODES -->
   <section class="view" id="view-codes" hidden>
-    <div class="row" style="justify-content:space-between">
-      <h2>Trouble codes</h2>
-      <div class="row">
-        <button class="btn primary" id="readBtn">Read codes</button>
-        <button class="btn danger" id="clearBtn">Clear codes</button>
-      </div>
+    <div class="row">
+      <button class="btn primary" id="readBtn" style="flex:1">Read codes</button>
+      <button class="btn danger" id="clearBtn" style="flex:1">Clear codes</button>
     </div>
     <div id="clearConfirm" hidden></div>
     <div id="codesOut"><div class="empty">Connect to the van, then tap <b>Read codes</b>. Stored, pending and permanent codes all show here.</div></div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div class="panel stack" style="gap:10px">
       <h3>Look up a code</h3>
       <p class="muted" style="font-size:.9rem">Works without the adapter. Type any code from another scanner or a parts-store printout.</p>
       <form class="lookup" id="lookupForm"><input id="lookupIn" maxlength="5" placeholder="P0171" aria-label="Trouble code" autocomplete="off"><button class="btn" type="submit">Open steps</button></form>
     </div>
   </section>
 
-  <!-- CHECKS -->
+  <!-- ALERTS (from More) -->
   <section class="view" id="view-checks" hidden>
-    <div><h2>Live alerts</h2><p class="muted" style="margin-top:4px;font-size:.92rem">Live readings are compared against normal ranges for this engine. A reading has to stay out of range for a few seconds before it is flagged.</p></div>
+    <p class="muted" style="font-size:.9rem">Live readings are compared against normal ranges for this engine. A reading has to stay out of range for a few seconds before it is flagged.</p>
     <div id="checksOut"></div>
   </section>
 
-  <!-- VEHICLE -->
-  <section class="view" id="view-vehicle" hidden>
-    <h2>Vehicle and adapter</h2>
-    <div class="panel"><dl class="kv" id="vehKv"></dl></div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
-      <div class="row" style="justify-content:space-between"><h3>Readiness monitors</h3><button class="btn small" id="monBtn">Refresh</button></div>
+  <!-- MORE -->
+  <section class="view" id="view-more" hidden>
+    <div class="panel conn">
+      <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg></span>
+      <span><b id="connName" style="display:block">Not connected</b><span class="muted" id="connSub" style="font-size:.84rem">Connect from Home</span></span>
+      <button class="btn small" id="discBtn" type="button" hidden>Disconnect</button>
+      <button class="btn small" id="goConnect" type="button">Connect</button>
+    </div>
+    <button class="btn primary" id="installBtn" type="button" hidden>Install MyVan on this device</button>
+    <div class="group"><span class="label">Vehicle</span><div class="panel"><dl class="kv" id="vehKv"></dl></div></div>
+    <div class="group"><span class="label">Live data</span>
+      <div class="rows">
+        <button class="nrow" type="button" data-go="readings"><span>All readings</span><span class="v muted" id="moreReadCount"></span></button>
+        <button class="nrow" type="button" data-go="checks"><span>Alerts this session</span><span class="v" id="checkBadge"></span></button>
+        <button class="nrow" type="button" data-go="log"><span>Session log and adapter traffic</span><span class="v muted" id="moreLogCount"></span></button>
+      </div></div>
+    <div class="panel stack" style="gap:12px">
+      <div class="row between"><h3>Readiness monitors</h3><button class="btn small" id="monBtn">Refresh</button></div>
       <p class="muted" style="font-size:.88rem">Self-tests the engine computer runs while you drive. After codes are cleared or the battery is disconnected they reset to "Not ready" and finish over a few days of normal driving.</p>
       <div class="monitors" id="monOut"><div class="empty" style="grid-column:1/-1">Connect to see monitor status.</div></div>
     </div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
-      <h3>Units</h3>
-      <div class="seg" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph</button><button id="uMet" type="button">°C · km/h</button></div>
-    </div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel stack" style="gap:12px">
       <h3>Backup and restore</h3>
       <p class="muted" style="font-size:.88rem">Save your drive history, maintenance, code notes and settings to a file. Restore it on a new phone, or after clearing the browser's data, so nothing is lost. The demo van's simulated drives aren't included.</p>
       <div class="row"><button class="btn" id="backupBtn" type="button">Back up to a file</button><button class="btn" id="restoreBtn" type="button">Restore from a file</button><input type="file" id="restoreIn" accept=".json,application/json" hidden aria-label="Backup file"></div>
       <div id="backupMsg" role="status"></div>
     </div>
-    <div class="panel prose">
-      <h3>What this tool can and can't see</h3>
-      <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
-      <p>Honda-only systems such as ABS/VSA, airbags, the body modules, tire pressure, Honda Sensing and detailed 10-speed transmission data use Honda's own protocols. Those need Honda's i-HDS software or a scanner that supports Honda enhanced data.</p>
-      <p><b>Other cars:</b> live data, trouble codes and readiness monitors work on any gasoline car sold in the US from 1996 on. The normal ranges, warnings and troubleshooting steps are tuned for this van's 3.5L V6, so on a different engine some idle and airflow warnings may be wrong.</p>
-      <p>The troubleshooting steps here are general diagnostic guidance written for this engine. For exact specifications, wiring diagrams and pinpoint tests, use Honda's official service information at <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>, which sells short-term access. Each code has a notes box where you can keep what you find there.</p>
-    </div>
-    <div class="panel prose">
-      <h3>Adapter power and the van's battery</h3>
+    <div class="group"><span class="label">Units</span>
+      <div class="seg full" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph · mi</button><button id="uMet" type="button">°C · km/h · km</button></div></div>
+    <div class="group"><span class="label">Appearance</span>
+      <div class="seg full" role="group" aria-label="Appearance"><button id="thAuto" type="button">Auto</button><button id="thLight" type="button">Light</button><button id="thDark" type="button">Dark</button></div>
+      <span class="muted" style="font-size:.84rem;padding-left:4px">Auto follows your phone: light by day, dark when your phone switches to dark mode.</span></div>
+    <div class="group"><span class="label">Help</span>
+    <details class="help"><summary>Adapter setup</summary><div class="prose">
+      <ul>
+        <li><b>Phone:</b> use a Bluetooth LE adapter, such as a Vgate iCar Pro BLE or OBDLink CX, in Chrome on Android. Older "classic Bluetooth" ELM327 adapters can't be reached from a browser. On iPhone, use the Bluefy browser, since Safari and Chrome on iOS have no Bluetooth support.</li>
+        <li><b>Laptop:</b> a USB ELM327 adapter or a Bluetooth LE adapter, in Chrome or Edge. Most USB adapters run at 38400 baud; try 115200 if it won't answer.</li>
+        <li>The OBD-II port is under the dash, left of the steering column. Turn the ignition on (engine on for live data) before connecting.</li>
+      </ul></div></details>
+    <details class="help"><summary>Adapter power and the van's battery</summary><div class="prose">
       <p>The OBD-II port has power even with the van off, so a plugged-in adapter always draws a little current. MyVan Assistant keeps that low:</p>
       <ul>
         <li>When you tap <b>Disconnect</b>, it sends the adapter a low-power command (ATLP) before letting go. Adapters with a genuine ELM327-type chip go to sleep right away; clones that don't support it ignore it.</li>
@@ -321,29 +393,25 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
         <li>It disconnects on its own after 10 minutes in the background, so a forgotten session doesn't keep the adapter awake.</li>
         <li>It only talks to the adapter while the app is open. Nothing runs when the app is closed.</li>
       </ul>
-      <p>An adapter that never sleeps can draw around 50 mA, enough to run a battery down over a few weeks of parking. If the van will sit for more than a week or two, unplug the adapter.</p>
+      <p>An adapter that never sleeps can draw around 50 mA, enough to run a battery down over a few weeks of parking. If the van will sit for more than a week or two, unplug the adapter.</p></div></details>
+    <details class="help"><summary>What this app can and can't see</summary><div class="prose">
+      <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
+      <p>Honda-only systems such as ABS/VSA, airbags, the body modules, tire pressure, Honda Sensing and detailed 10-speed transmission data use Honda's own protocols. Those need Honda's i-HDS software or a scanner that supports Honda enhanced data.</p>
+      <p><b>Other cars:</b> live data, trouble codes and readiness monitors work on any gasoline car sold in the US from 1996 on. The normal ranges, warnings and troubleshooting steps are tuned for this van's 3.5L V6, so on a different engine some idle and airflow warnings may be wrong.</p>
+      <p>The troubleshooting steps here are general diagnostic guidance written for this engine. For exact specifications, wiring diagrams and pinpoint tests, use Honda's official service information at <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>, which sells short-term access. Each code has a notes box where you can keep what you find there.</p></div></details>
     </div>
-    <div class="panel prose">
-      <h3>Adapter setup</h3>
-      <p class="muted" style="font-size:.85rem">MyVan Assistant version <span id="appVer"></span></p>
-      <ul>
-        <li><b>Phone:</b> use a Bluetooth LE adapter, such as a Vgate iCar Pro BLE or OBDLink CX, in Chrome on Android. Older "classic Bluetooth" ELM327 adapters can't be reached from a browser. On iPhone, use the Bluefy browser, since Safari and Chrome on iOS have no Bluetooth support.</li>
-        <li><b>Laptop:</b> a USB ELM327 adapter or a Bluetooth LE adapter, in Chrome or Edge. Most USB adapters run at 38400 baud; try 115200 if it won't answer.</li>
-        <li>The OBD-II port is under the dash, left of the steering column. Turn the ignition on (engine on for live data) before connecting.</li>
-      </ul>
-    </div>
+    <p class="muted hint">MyVan Assistant version <span id="appVer"></span> · your data stays on this device</p>
   </section>
 
-  <!-- LOG -->
+  <!-- LOG (from More) -->
   <section class="view" id="view-log" hidden>
-    <h2>Session log</h2>
-    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel stack" style="gap:12px">
       <p class="muted" style="font-size:.92rem">Record a drive while a problem happens, then copy the readings as CSV for a spreadsheet or to share with your mechanic.</p>
       <div class="row"><button class="btn primary" id="recBtn">Start recording</button><button class="btn" id="copyBtn">Copy CSV</button><button class="btn" id="dlBtn">Download CSV</button><span class="muted" id="recInfo">0 rows</span></div>
       <span class="muted" id="copyMsg" role="status" style="font-size:.88rem"></span>
       <textarea id="csvFallback" hidden readonly aria-label="CSV data"></textarea>
     </div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <div class="panel stack" style="gap:10px">
       <h3>Adapter traffic</h3>
       <div class="log-lines" id="traffic">Nothing yet.</div>
     </div>
@@ -351,19 +419,18 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
 </div>
 
 <nav class="tabs" role="tablist" aria-label="Sections">
-  <button role="tab" data-v="live" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/></svg>Live</button>
-  <button role="tab" data-v="health" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>Health</button>
-  <button role="tab" data-v="codes" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M8 9V6M16 9V6M12 19v2"/></svg>Codes<span class="badge" id="codeBadge" hidden></span></button>
-  <button role="tab" data-v="checks" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>Alerts<span class="badge" id="checkBadge" hidden></span></button>
-  <button role="tab" data-v="vehicle" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l2-6a2 2 0 0 1 2-1.4h10a2 2 0 0 1 2 1.4l2 6v3h-3M6 18H3"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="16.5" cy="18" r="1.6"/></svg>Vehicle</button>
-  <button role="tab" data-v="log" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
+  <div class="railbrand"><img src="icon-192.png" alt="">MyVan</div>
+  <button role="tab" data-v="live" aria-selected="true"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/></svg></span>Home</button>
+  <button role="tab" data-v="health" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg></span>Health<span class="badge" id="healthBadge" hidden></span></button>
+  <button role="tab" data-v="codes" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M8 9V6M16 9V6M12 19v2"/></svg></span>Codes<span class="badge" id="codeBadge" hidden></span></button>
+  <button role="tab" data-v="more" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></span>More</button>
 </nav>
 
 <div id="sheetRoot"></div>
 
 <script>
 "use strict";
-const APP_VERSION = "2.1"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.2"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -377,6 +444,13 @@ const store = {
   set(k, v) { try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} }
 };
 let units = store.get("units", "us");
+/* Appearance: Auto follows the device; Light or Dark forces it. */
+function applyTheme() {
+  const th = store.get("theme", "auto"), root = document.documentElement;
+  if (th === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", th);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { const dark = th === "dark" || (th === "auto" && /dark/.test(m.media)); m.content = dark ? "#0E1113" : "#F3F4F1"; });
+}
+applyTheme();
 
 /* ---------- parameters (internal values are metric) ---------- */
 const PARAMS = [
@@ -1106,7 +1180,7 @@ function afterSample() {
 
 /* ---------- rendering ---------- */
 let raf = 0;
-function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "vehicle") renderVehicle(); if (clearOpen && engineRunning() !== clearShownRunning) renderClearConfirm(); if (sheetRefresh) sheetRefresh(); }); }
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "more") renderVehicle(); if (clearOpen && engineRunning() !== clearShownRunning) renderClearConfirm(); if (sheetRefresh) sheetRefresh(); }); }
 
 function renderConnect(busy) {
   const box = $("#connectBox");
@@ -1152,22 +1226,31 @@ function engineState() {
 }
 const ICO_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const ICO_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>';
+let stripHtml = "", rowsHtml = "";
+const liveParams = () => PARAMS.filter(p => p.group !== "hidden" && (p.special || state.supported.has(p.pid)));
 function renderStrip() {
-  const hs = healthSummary();
-  const f = state.findings, crit = f.filter(x => x.level === "crit").length;
+  const hs = healthSummary(), f = state.findings;
+  const crit = f.filter(x => x.level === "crit").length, lvl = crit ? "crit" : f.length ? "warn" : "";
+  const top = f.find(x => x.level === "crit") || f[0];
+  let html;
+  if (top) {
+    const kick = crit ? `${crit} critical reading${crit > 1 ? "s" : ""}` : `${f.length} reading${f.length > 1 ? "s" : ""} out of range`;
+    html = `<div class="hero ${lvl}" id="statusCard"><span class="kicker">${ICO_WARN}${kick}</span><h3>${esc(top.title)}</h3><p>${esc(top.detail)}</p>
+      <div class="row"><button class="btn go" type="button" data-graph="${esc(top.keys[0])}">See the graph</button><button class="btn alt" type="button" data-g="${esc(top.guide)}">Troubleshoot</button></div></div>`
+      + (f.length > 1 ? `<div class="list">${f.filter(x => x !== top).map(x => `<div class="item"><span class="chip ${x.level}">${x.level === "crit" ? "Critical" : "Warning"}</span><div class="body"><b>${esc(x.title)}</b><p class="muted" style="font-size:.88rem">${esc(x.detail)}</p></div><button class="btn small" type="button" data-graph="${esc(x.keys[0])}">Graph</button></div>`).join("")}</div>` : "");
+  } else {
+    html = `<div class="hero" id="statusCard"><span class="kicker">${ICO_OK}All readings normal</span><h3>${esc(engineState())}</h3><p>Running ${V.runtime != null ? num(P.runtime, V.runtime) : "—"} · ${liveParams().length} readings checked</p></div>`;
+  }
+  if (html !== stripHtml) { stripHtml = html; $("#strip").innerHTML = html; }
   const codes = state.codes ? state.codes.stored.length + state.codes.pending.length : null;
-  const lvl = crit ? "crit" : f.length ? "warn" : "";
-  const head = crit ? `${crit} critical reading${crit > 1 ? "s" : ""}` : f.length ? `${f.length} reading${f.length > 1 ? "s" : ""} need${f.length > 1 ? "" : "s"} attention` : "All readings normal";
-  const sub = `${engineState()} · running ${V.runtime != null ? num(P.runtime, V.runtime) : "—"}${f.length ? " · " + esc(f.map(x => x.title).slice(0, 2).join(", ")) : ""}`;
-  $("#strip").innerHTML = `
-    <div class="hero ${lvl}"><span class="hero-ico">${lvl ? ICO_WARN : ICO_OK}</span><div class="t"><h3>${head}</h3><p>${sub}</p></div>${f.length ? '<button class="btn small" data-go="checks">Review</button>' : ""}</div>
-    <div class="cells">
-      <div class="cell"><span class="label">Check engine</span><span class="v" style="${state.mil ? "color:var(--warn)" : ""}">${state.mil == null ? "—" : state.mil ? "On" : "Off"}</span><span class="s">Warning light</span></div>
-      <button class="cell" data-go="codes"><span class="label">Codes</span><span class="v">${codes == null ? "—" : codes}</span><span class="s">${codes ? "View details ›" : "Stored + pending"}</span></button>
-      <button class="cell" data-go="health"><span class="label">Health</span><span class="v" style="${hs.lvl ? "color:var(--" + hs.lvl + ")" : ""}">${hs.label}</span><span class="s">${hs.sub} ›</span></button>
-      <div class="cell"><span class="label">Battery</span><span class="v">${V.batt != null ? num(P.batt, V.batt) : "—"}<small style="font-size:.8rem;color:var(--muted);font-weight:400"> V</small></span><span class="s">${engineState() === "Engine off" ? "Resting" : "Charging"}</span></div>
-    </div>`;
-  $("#strip").querySelectorAll("[data-go]").forEach(b => b.onclick = () => show(b.dataset.go));
+  const rows = [
+    ["codes", "Check engine light", state.mil == null ? "—" : state.mil ? "On" : "Off", state.mil ? "warn" : "muted"],
+    ["codes", "Trouble codes", codes == null ? "Not read yet" : String(codes), codes ? "warn" : "muted"],
+    ["health", "Health", hs.label, hs.lvl || "muted"],
+    ["readings", "All readings", String(liveParams().length), "muted"]
+  ];
+  const rh = rows.map(([go, l, v, c]) => `<button class="nrow" type="button" data-go="${go}"><span>${l}</span><span class="v ${c}">${esc(v)}</span></button>`).join("");
+  if (rh !== rowsHtml) { rowsHtml = rh; $("#homeRows").innerHTML = rh; }
 }
 function tileLevel(key) {
   let l = "";
@@ -1197,46 +1280,83 @@ function sparkSvg(key, w = 100, h = 30) {
   return out;
 }
 const pct = (p, v) => Math.max(0, Math.min(100, ((v - p.g[0]) / (p.g[1] - p.g[0])) * 100));
-function buildTiles() {
-  const live = PARAMS.filter(p => p.group !== "hidden" && (p.special || state.supported.has(p.pid)));
+/* Reading tiles and rows. Home shows the key gauges, anything out of range, and what you pin. */
+const HOME_DEFAULT = ["ect", "batt", "rpm", "speed"];
+let pins = store.get("pins", []), readView = store.get("readView", "list"), homeSig = "";
+const SHORT = { rpm: "Engine speed", speed: "Speed", load: "Engine load", tps: "Throttle", map: "Manifold pressure", maf: "Airflow", timing: "Timing advance",
+  ect: "Coolant", iat: "Intake air", amb: "Outside air", oil: "Oil temp", cat1: "Catalyst, bank 1", cat2: "Catalyst, bank 2",
+  stft1: "Short trim, bank 1", ltft1: "Long trim, bank 1", stft2: "Short trim, bank 2", ltft2: "Long trim, bank 2", lambda: "Commanded λ",
+  af1: "Air-fuel, bank 1", af2: "Air-fuel, bank 2", o2b1s2: "Rear O2, bank 1", o2b2s2: "Rear O2, bank 2", fuel: "Fuel level",
+  batt: "Battery", ecuv: "Computer voltage", baro: "Barometric" };
+const shortName = p => SHORT[p.key] || p.name;
+const outText = (p, v) => p.normal && v != null ? (v > p.normal[1] ? "Above normal" : v < p.normal[0] ? "Below normal" : "Check") : "Check";
+function tileHtml(p) {
+  return `<button class="tile" data-k="${p.key}" type="button" aria-label="${esc(p.name)}"><span class="hd"><span class="name">${esc(shortName(p))}</span><span class="st none">—</span></span>
+    <span class="val"><b>—</b><small>${esc(unitOf(p))}</small></span><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"></svg></button>`;
+}
+function rowHtml(p) {
+  return `<button class="rrow" data-k="${p.key}" type="button"><span class="nm">${esc(p.name)}<small hidden></small></span><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"></svg><span class="rv">—</span><span class="ru">${esc(unitOf(p))}</span></button>`;
+}
+function updateReadingEl(el) {
+  const p = P[el.dataset.k]; if (!p) return;
+  const v = V[p.key], lv = tileLevel(p.key), tag = lv ? (lv === "crit" ? "Critical" : outText(p, v)) : "";
+  const sp = el.querySelector("svg.spark"); if (sp) sp.innerHTML = sparkSvg(p.key);
+  if (el.classList.contains("tile")) {
+    el.className = "tile" + (lv ? " " + lv : "");
+    el.querySelector(".val b").textContent = num(p, v);
+    const st = el.querySelector(".st");
+    if (lv) { st.className = "st"; st.textContent = lv === "crit" ? "Critical" : tag === "Above normal" ? "High" : tag === "Below normal" ? "Low" : tag; }
+    else if (v != null && p.normal) { st.className = "st"; st.textContent = "Normal"; }
+    else { st.className = "st none"; st.textContent = v == null ? "—" : "Live"; }
+  } else {
+    el.className = "rrow" + (lv ? " " + lv : "");
+    el.querySelector(".rv").textContent = num(p, v);
+    const sm = el.querySelector(".nm small"); sm.hidden = !lv; sm.textContent = tag;
+  }
+}
+function homeKeys() {
+  const ok = k => P[k] && P[k].group !== "hidden" && (P[k].special || state.supported.has(P[k].pid));
+  return [...state.findings.map(f => f.keys[0]), ...HOME_DEFAULT, ...pins].filter((k, i, a) => ok(k) && a.indexOf(k) === i);
+}
+function buildHome() {
+  const keys = homeKeys(); homeSig = keys.join(",");
+  $("#homeTiles").innerHTML = keys.map(k => tileHtml(P[k])).join("");
+  document.querySelectorAll("#homeTiles [data-k]").forEach(updateReadingEl);
+}
+function buildReadings() {
+  const live = liveParams();
   $("#groups").innerHTML = GROUPS.map(g => {
     const ps = live.filter(p => p.group === g);
     if (!ps.length) return "";
-    return `<div class="group"><span class="label">${g}</span><div class="tiles">${ps.map(p => `
-      <button class="tile" id="t-${p.key}" data-k="${p.key}">
-        <span class="hd"><span class="name">${esc(p.name)}</span><span class="st none">—</span></span>
-        <span class="val"><b>—</b><small>${esc(unitOf(p))}</small></span>
-        ${p.g ? `<span class="range">${p.normal ? `<span class="band" style="left:${pct(p, p.normal[0])}%;right:${100 - pct(p, p.normal[1])}%"></span>` : ""}<span class="mark" style="left:0%" hidden></span></span>` : ""}
-        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"></svg>
-      </button>`).join("")}</div></div>`;
+    return `<div class="group"><span class="label">${g}</span>${readView === "tiles" ? `<div class="tiles">${ps.map(tileHtml).join("")}</div>` : `<div class="rlist">${ps.map(rowHtml).join("")}</div>`}</div>`;
   }).join("");
   const unsupported = PARAMS.filter(p => p.pid != null && p.group !== "hidden" && !state.supported.has(p.pid));
-  if (unsupported.length) $("#groups").insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:.85rem">Not reported by this van over standard OBD-II: ${unsupported.map(p => esc(p.name.toLowerCase())).join(", ")}.</p>`);
-  $("#groups").querySelectorAll(".tile").forEach(t => t.onclick = () => openParam(t.dataset.k));
+  if (state.elm && unsupported.length) $("#groups").insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:.85rem">Not reported by this van over standard OBD-II: ${unsupported.map(p => esc(p.name.toLowerCase())).join(", ")}.</p>`);
+  if (!state.elm) $("#groups").innerHTML = `<div class="empty">Connect to the van to see every reading.</div>`;
+  $("#rvList").setAttribute("aria-pressed", readView !== "tiles"); $("#rvTiles").setAttribute("aria-pressed", readView === "tiles");
+  renderReadCount();
+  document.querySelectorAll("#groups [data-k]").forEach(updateReadingEl);
 }
+function renderReadCount() {
+  const n = liveParams().length, f = state.findings.length;
+  $("#readCount").textContent = state.elm ? `${n} readings${f ? ` · ${f} out of range` : ""}` : "";
+}
+function buildTiles() { buildHome(); buildReadings(); }
 function renderLive() {
   if ($("#liveBox").hidden) return;
   renderStrip();
-  for (const p of PARAMS) {
-    const el = document.getElementById("t-" + p.key); if (!el) continue;
-    const v = V[p.key];
-    el.querySelector(".val b").textContent = num(p, v);
-    const lv = tileLevel(p.key);
-    el.className = "tile" + (lv ? " " + lv : "");
-    const mk = el.querySelector(".mark");
-    if (mk && v != null) { mk.hidden = false; mk.style.left = pct(p, v) + "%"; }
-    el.querySelector("svg.spark").innerHTML = sparkSvg(p.key);
-    const st = el.querySelector(".st");
-    if (lv) { st.className = "st"; st.textContent = lv === "crit" ? "Critical" : "Check"; }
-    else if (v != null && p.normal) { st.className = "st"; st.textContent = "Normal"; }
-    else { st.className = "st none"; st.textContent = v == null ? "—" : "Live"; }
-  }
+  if (homeKeys().join(",") !== homeSig) buildHome();
+  else document.querySelectorAll("#homeTiles [data-k]").forEach(updateReadingEl);
+  if (current === "readings") { renderReadCount(); document.querySelectorAll("#groups [data-k]").forEach(updateReadingEl); }
 }
 function updateBadges() {
   const n = state.codes ? state.codes.stored.length + state.codes.pending.length : 0;
   $("#codeBadge").hidden = !n; $("#codeBadge").textContent = n;
-  const f = state.findings.length;
-  $("#checkBadge").hidden = !f; $("#checkBadge").textContent = f;
+  const f = state.findings.length, cb = $("#checkBadge");
+  cb.textContent = f ? f + " active" : Object.keys(state.seen).length ? "Earlier only" : "None";
+  cb.className = "v " + (f ? "warn" : "muted");
+  const bad = healthSummary().bad;
+  $("#healthBadge").hidden = !bad; $("#healthBadge").textContent = bad;
 }
 function codeItem(code, kind) {
   const g = guideFor(code);
@@ -1271,7 +1391,7 @@ function renderVehicle() {
   const rows = [
     ["Connection", state.elm ? (state.mode === "demo" ? "Demo van (simulated)" : state.conn.name) : "Not connected"],
     ["VIN", state.vin ? `<span class="mono">${esc(state.vin)}</span>` : "—"],
-    ["Protocol", state.protocol ? esc(state.protocol) : "—"],
+    ["Protocol", state.protocol ? esc(state.protocol.replace(/^AUTO,\s*/i, "")) : "—"],
     ["Adapter", state.elmVer ? esc(state.elmVer) : "—"],
     ["Battery", V.batt != null ? fmt("batt") : "—"],
     ["Odometer", V.odo != null ? fmt("odo") + (state.mode === "demo" ? " (simulated)" : "") : state.elm && !state.supported.has(0xA6) ? "Not reported by this van" : "—"],
@@ -1279,6 +1399,13 @@ function renderVehicle() {
   ];
   $("#vehKv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   $("#uUS").setAttribute("aria-pressed", units === "us"); $("#uMet").setAttribute("aria-pressed", units !== "us");
+  const th = store.get("theme", "auto");
+  [["thAuto", "auto"], ["thLight", "light"], ["thDark", "dark"]].forEach(([id, t]) => $("#" + id).setAttribute("aria-pressed", th === t));
+  $("#connName").textContent = state.elm ? (state.mode === "demo" ? "Demo van" : state.conn.name) : "Not connected";
+  $("#connSub").textContent = state.elm ? [state.mode === "demo" ? "Simulated" : "", state.elmVer].filter(Boolean).join(" · ") : "Connect from Home";
+  $("#discBtn").hidden = !state.elm; $("#goConnect").hidden = !!state.elm;
+  $("#moreReadCount").textContent = state.elm ? String(liveParams().length) : "";
+  $("#moreLogCount").textContent = state.rows.length ? state.rows.length.toLocaleString() + " rows" : "";
 }
 function renderMonitors() {
   const m = state.monitors;
@@ -1337,19 +1464,29 @@ function openGuide(code) {
   $("#noteBox").oninput = e => store.set("note:" + code, e.target.value);
 }
 function openParam(key) {
-  const p = P[key];
+  const p = P[key]; if (!p) return;
   const body = () => {
-    const fs = state.findings.filter(f => f.keys.includes(key));
-    return `<div class="row" style="align-items:baseline;gap:8px"><span style="font-family:var(--f-display);font-size:2.6rem;font-weight:600;font-variant-numeric:tabular-nums">${num(p, V[key])}</span><span class="muted">${esc(unitOf(p))}</span></div>
-      <div class="block"><svg class="bigspark spark" viewBox="0 0 300 120" preserveAspectRatio="none" aria-label="Last ${(H[key] || []).length} readings">${sparkSvg(key, 300, 120)}</svg>
-      <div class="legend">${p.normal ? '<span><i style="background:var(--band)"></i>Normal range</span>' : ""}<span><i style="background:var(--spark)"></i>Reading</span><span><i style="background:var(--warn)"></i>Flagged</span><span><i style="background:var(--crit)"></i>Critical</span></div></div>
+    const fs = state.findings.filter(f => f.keys.includes(key)), lv = tileLevel(key), v = V[key], arr = H[key] || [];
+    const status = lv ? (lv === "crit" ? "Critical" : outText(p, v)) : v == null ? "No reading" : p.normal ? "Normal" : "Live";
+    return `<div class="bigval ${lv}"><b>${num(p, v)}</b><span class="muted">${esc(unitOf(p))}</span><span class="chip ${lv || (p.normal && v != null ? "ok" : "na")}" style="margin-left:auto">${esc(status)}</span></div>
+      <div class="block"><svg class="bigspark spark" viewBox="0 0 300 120" preserveAspectRatio="none" aria-label="Last ${arr.length} readings">${sparkSvg(key, 300, 120)}</svg>
+      <div class="legend">${p.normal ? '<span><i style="background:var(--band)"></i>Normal range</span>' : ""}<span><i style="background:var(--spark)"></i>Reading</span><span><i style="background:var(--warn)"></i>Out of range</span><span><i style="background:var(--crit)"></i>Critical</span></div></div>
+      ${arr.length ? `<div class="stats"><div><span>Lowest</span><b>${num(p, Math.min(...arr))}</b></div><div><span>Average</span><b>${num(p, mean(arr))}</b></div><div><span>Highest</span><b>${num(p, Math.max(...arr))}</b></div></div>` : ""}
       ${p.normal ? `<p style="font-size:.92rem"><span class="muted">Normal:</span> ${esc(normalText(p))}</p>` : ""}
-      ${fs.map(f => `<div class="item"><span class="chip ${f.level}">${f.level === "crit" ? "Critical" : "Warning"}</span><div class="body"><b>${esc(f.title)}</b><p class="muted" style="font-size:.9rem">${esc(f.detail)}</p></div><button class="btn small" data-g="${esc(f.guide)}">Troubleshoot</button></div>`).join("")}`;
+      ${fs.map(f => `<div class="hero ${f.level}"><span class="kicker">${ICO_WARN}${f.level === "crit" ? "Critical" : "Warning"}</span><b>${esc(f.title)}</b><p style="font-size:.9rem">${esc(f.detail)}</p><button class="btn go" data-g="${esc(f.guide)}" style="align-self:flex-start">Troubleshoot</button></div>`).join("")}`;
   };
+  const pinState = () => HOME_DEFAULT.includes(key) ? { label: "Always shown on Home", disabled: true } : pins.includes(key) ? { label: "Unpin from Home", disabled: false } : { label: "Pin to Home", disabled: false };
+  const ps = pinState();
   openSheet(`<header><div class="t"><span class="label">${esc(p.group)}</span><h2>${esc(p.name)}</h2></div><button class="close" aria-label="Close">×</button></header>
-    <div id="pBody" style="display:flex;flex-direction:column;gap:12px">${body()}</div>
-    <div class="block prose"><p>${esc(p.desc)}</p></div>`, () => { const b = $("#pBody"); if (b) { b.innerHTML = body(); bindG(b); } });
+    <div id="pBody" class="stack" style="gap:12px">${body()}</div>
+    <div class="block prose"><p>${esc(p.desc)}</p></div>
+    <button class="btn" id="pinBtn" type="button" aria-pressed="${pins.includes(key)}" ${ps.disabled ? "disabled" : ""}>${esc(ps.label)}</button>`, () => { const b = $("#pBody"); if (b) { b.innerHTML = body(); bindG(b); } });
   bindG($("#pBody"));
+  $("#pinBtn").onclick = () => {
+    pins = pins.includes(key) ? pins.filter(k => k !== key) : [...pins, key];
+    store.set("pins", pins); homeSig = ""; renderLive();
+    const n = pinState(), b = $("#pinBtn"); b.textContent = n.label; b.setAttribute("aria-pressed", pins.includes(key));
+  };
   function bindG(root) { root.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openGuide(b.dataset.g)); }
 }
 
@@ -1680,7 +1817,7 @@ function evalComponent(c) {
 function healthSummary() {
   const g = COMPONENTS.map(c => evalComponent(c).grade);
   const bad = g.filter(x => GR[x].r >= 3).length, watch = g.filter(x => x === "watch").length, known = g.filter(x => x !== "unknown").length;
-  return { label: bad ? bad + " to fix" : watch ? watch + " to watch" : known ? "Good" : "—", sub: known ? `${known} parts graded` : "No data yet", lvl: bad ? "crit" : watch ? "warn" : "" };
+  return { bad, label: bad ? bad + " to fix" : watch ? watch + " to watch" : known ? "Good" : "—", sub: known ? `${known} parts graded` : "No data yet", lvl: bad ? "crit" : watch ? "warn" : "" };
 }
 const timeAgo = d => { const m = Math.round((Date.now() - d) / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
 const dateShort = t => new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
@@ -1745,17 +1882,39 @@ function openComponent(id) {
 }
 
 /* ---------- tabs & wiring ---------- */
-let current = "live";
+let current = "live", parentView = "live";
+const TAB_OF = { live: "live", readings: "live", health: "health", codes: "codes", more: "more", checks: "more", log: "more" };
+const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
 function show(v) {
+  if (!TAB_OF[v]) v = "live";
+  if (TAB_OF[v] !== v && current !== v) parentView = TAB_OF[current] === current ? current : parentView;
   current = v;
-  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
+  const tab = TAB_OF[v], sub = tab !== v;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === tab));
   document.querySelectorAll("section.view").forEach(s => s.hidden = s.id !== "view-" + v);
+  $("#topTitle").textContent = TITLES[v]; $("#backBtn").hidden = !sub;
+  if (v === "readings") buildReadings();
   if (v === "checks") renderChecks();
   if (v === "health") renderHealth();
-  if (v === "vehicle") { renderVehicle(); renderMonitors(); }
+  if (v === "more") { renderVehicle(); renderMonitors(); updateBadges(); }
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
 }
+$("#backBtn").onclick = () => show(parentView);
+$("#connPill").onclick = () => show("more");
+$("#goConnect").onclick = () => show("live");
+$("#rvList").onclick = () => { readView = "list"; store.set("readView", "list"); buildReadings(); };
+$("#rvTiles").onclick = () => { readView = "tiles"; store.set("readView", "tiles"); buildReadings(); };
+const setTheme = th => { store.set("theme", th); applyTheme(); renderVehicle(); };
+$("#thAuto").onclick = () => setTheme("auto"); $("#thLight").onclick = () => setTheme("light"); $("#thDark").onclick = () => setTheme("dark");
+// One listener for everything rendered on the fly: gauges, Home rows, More rows, status card buttons.
+document.addEventListener("click", e => {
+  const t = e.target.closest ? e.target : null; if (!t) return;
+  const gr = t.closest("[data-graph]"); if (gr) { openParam(gr.dataset.graph); return; }
+  const k = t.closest("#homeTiles [data-k], #groups [data-k]"); if (k) { openParam(k.dataset.k); return; }
+  const go = t.closest("#homeRows [data-go], #view-more [data-go]"); if (go) { show(go.dataset.go); return; }
+  const gd = t.closest("#strip [data-g]"); if (gd) openGuide(gd.dataset.g);
+});
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => show(b.dataset.v));
 $("#discBtn").onclick = () => disconnect("");
 $("#readBtn").onclick = readCodes;

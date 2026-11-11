@@ -10,7 +10,7 @@ const SAVED = {
 };
 
 async function backUp(page) {
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Back up to a file" }).click()]);
   expect(dl.suggestedFilename()).toMatch(/^myvan-backup-\d{4}-\d{2}-\d{2}\.json$/);
   const chunks = []; for await (const c of await dl.createReadStream()) chunks.push(c);
@@ -32,7 +32,7 @@ test("restore round-trips a backup after confirmation", async ({ page }) => {
   const file = await backUp(page);
   await seedStorage(page, { drives: [drive(9)], "note:P0420": "will be removed" });
 
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   await pick(page, file);
   await expect(page.locator("#backupMsg")).toContainText("It has 3 drives, 1 code note");
   await page.getByRole("button", { name: "Replace my data" }).click();
@@ -50,7 +50,7 @@ test("cancelling a restore changes nothing", async ({ page }) => {
   const file = await backUp(page);
   const before = { drives: [drive(9)] };
   await seedStorage(page, before);
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   await pick(page, file);
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.locator("#backupMsg")).toBeEmpty();
@@ -65,7 +65,7 @@ for (const [label, text, msg] of [
 ]) {
   test(`rejects ${label} and keeps current data`, async ({ page }) => {
     await seedStorage(page, SAVED);
-    await tab(page, "Vehicle");
+    await tab(page, "More");
     await pick(page, text);
     await expect(page.getByRole("alert")).toContainText(msg);
     await expect(page.getByRole("alert")).toContainText("hasn't been changed");

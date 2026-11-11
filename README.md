@@ -4,16 +4,17 @@ A live health monitor and diagnostic assistant for a 2018 Honda Odyssey Elite (3
 
 ## What it does
 
-- **Live:** about 27 engine readings, each drawn against the normal range for this engine, with trend lines that turn orange or red where a reading was flagged.
+Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side menu. Appearance follows your phone (light or dark), or set it under More.
+
+- **Home:** a plain-English status card, then live gauges for coolant, battery, engine speed and road speed. Any reading that goes out of range appears on Home by itself, highlighted, and you can pin any other gauge there.
+- **All readings:** about 26 engine readings as a compact list or as tiles, each with a live graph against the normal range for this engine. The graph turns amber or red where a reading was flagged. Tap any reading for a large graph, lowest/average/highest, the normal range, any alert and its troubleshooting steps.
 - **Health:** a report card for 15 major parts. Grades come from three sources:
   - the engine computer's own self-test results (OBD-II mode 06), measured against Honda's pass/fail limits
   - trends across your recorded drives: fuel trims, warm-up time, battery and cranking voltage, airflow, idle steadiness, downstream O2 activity and misfire counts per cylinder
   - the part ages you enter
 - **Early warnings:** spots slow changes, such as a battery weakening or a cylinder starting to misfire, before a trouble code or warning light appears.
-- **Codes:** stored, pending and permanent codes, plus step-by-step troubleshooting guides for about 60 common codes.
-- **Live alerts:** readings that stay out of range for a few seconds.
-- **Vehicle:** VIN, protocol, readiness monitors and units.
-- **Log:** records a drive and exports it as CSV.
+- **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
+- **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, units, appearance and help.
 - **Demo van:** a simulated Odyssey for trying every screen without the car.
 
 ## Adapter
