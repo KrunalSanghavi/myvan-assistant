@@ -26,7 +26,7 @@ test("sub-screens open from rows and Back returns", async ({ page }) => {
   await page.getByRole("button", { name: "Back" }).click();
   await onlyVisible(page, "live");
   await tab(page, "More");
-  await page.locator("#view-more [data-go=checks]").click();
+  await page.locator("#view-more [data-go=checks]").first().click();
   await onlyVisible(page, "checks");
   await page.getByRole("button", { name: "Back" }).click();
   await page.locator("#view-more [data-go=log]").click();

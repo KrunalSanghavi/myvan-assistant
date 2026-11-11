@@ -34,7 +34,7 @@ test("back walks out of sub-screens and tabs to Home", async ({ page }) => {
   await connectDemo(page);
   await tab(page, "Health");
   await tab(page, "More");
-  await page.locator("#view-more [data-go=checks]").click();
+  await page.locator("#view-more [data-go=checks]").first().click();
   await visible(page, "checks");
   await back(page); await visible(page, "more");
   await back(page); await visible(page, "health");

@@ -349,6 +349,12 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
   <!-- ALERTS (from More) -->
   <section class="view" id="view-checks" hidden>
+    <div class="panel stack" id="speakPanel" style="gap:10px">
+      <div class="row between"><h3>Spoken alerts</h3><button class="btn small" id="speakTest" type="button">Test voice</button></div>
+      <p class="muted" style="font-size:.88rem">Reads new alerts out loud while you drive, such as "Warning. Bank 2 running lean." Each alert is spoken once and isn't repeated for 5 minutes. Critical alerts repeat every 2 minutes while they last.</p>
+      <div class="seg full" role="group" aria-label="Spoken alerts"><button id="spOff" type="button">Off</button><button id="spCrit" type="button">Critical only</button><button id="spAll" type="button">All alerts</button></div>
+      <p class="muted" id="speakNote" style="font-size:.84rem"></p>
+    </div>
     <p class="muted" style="font-size:.9rem">Live readings are compared against normal ranges for this engine. A reading has to stay out of range for a few seconds before it is flagged.</p>
     <div id="checksOut"></div>
   </section>
@@ -367,6 +373,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
       <div class="rows">
         <button class="nrow" type="button" data-go="readings"><span>All readings</span><span class="v muted" id="moreReadCount"></span></button>
         <button class="nrow" type="button" data-go="checks"><span>Alerts this session</span><span class="v" id="checkBadge"></span></button>
+        <button class="nrow" type="button" data-go="checks"><span>Spoken alerts</span><span class="v muted" id="speakRow"></span></button>
         <button class="nrow" type="button" data-go="log"><span>Session log and adapter traffic</span><span class="v muted" id="moreLogCount"></span></button>
       </div></div>
     <div class="panel stack" style="gap:12px">
@@ -437,7 +444,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.3.1"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.4"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1164,6 +1171,52 @@ function evalRules() {
   if (V.fuel != null && V.fuel < 10) push("fuel", "warn", "Fuel level low", `${fmt("fuel")} in the tank.`, "FUEL", ["fuel"]);
   return out;
 }
+/* ---------- spoken alerts (Web Speech API; off by default) ---------- */
+const SPEAK_COOLDOWN = 5 * 60000, CRIT_REPEAT = 2 * 60000;
+const SPEAK_LABEL = { off: "Off", critical: "Critical only", all: "All alerts" };
+let speakMode = store.get("speak", "off");
+const spoken = {};   // alert id -> { at: last spoken, active }
+const canSpeak = () => typeof window.speechSynthesis === "object" && window.speechSynthesis && typeof window.SpeechSynthesisUtterance === "function";
+function say(text) {
+  if (!canSpeak()) return;
+  try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 1; window.speechSynthesis.speak(u); } catch {}
+}
+// Turn on-screen text into something a voice reads naturally.
+const spokenText = t => String(t)
+  .replace(/\s?°F/g, " degrees").replace(/\s?°C/g, " degrees").replace(/\s?°/g, " degrees")
+  .replace(/(\d)\s?%/g, "$1 percent").replace(/(\d)\s?V\b/g, "$1 volts").replace(/(\d)\s?rpm\b/g, "$1 R P M")
+  .replace(/(\d)\s?g\/s\b/g, "$1 grams per second").replace(/±/g, "plus or minus ").replace(/\+(\d)/g, "plus $1").replace(/[−-](\d)/g, "minus $1");
+function alertSpeech(f) {
+  return f.level === "crit" ? `Critical. ${spokenText(f.title)}. ${spokenText(f.detail)}` : `Warning. ${spokenText(f.title)}.`;
+}
+function speakAlerts(active) {
+  const now = Date.now(), ids = new Set(active.map(f => f.id));
+  for (const id in spoken) if (!ids.has(id)) spoken[id].active = false;
+  if (speakMode === "off" || !state.elm || !canSpeak()) return;
+  for (const f of active) {
+    if (speakMode === "critical" && f.level !== "crit") continue;
+    const s = spoken[f.id];
+    const fresh = !s || (!s.active && now - s.at > SPEAK_COOLDOWN);
+    const repeat = s && s.active && f.level === "crit" && now - s.at > CRIT_REPEAT;
+    if (fresh || repeat) { say(alertSpeech(f)); spoken[f.id] = { at: now, active: true }; }
+    else s.active = true;
+  }
+}
+function renderSpeak() {
+  const ok = canSpeak();
+  [["spOff", "off"], ["spCrit", "critical"], ["spAll", "all"]].forEach(([id, m]) => { const b = $("#" + id); b.setAttribute("aria-pressed", speakMode === m); b.disabled = !ok; });
+  $("#speakTest").disabled = !ok;
+  $("#speakRow").textContent = ok ? SPEAK_LABEL[speakMode] : "Not available";
+  $("#speakNote").textContent = !ok ? "This browser can't speak. Use Chrome on Android, or Chrome or Edge on a laptop."
+    : speakMode === "off" ? "" : "Keep the app open on screen while driving: phones pause speech when the app is in the background or the screen locks.";
+}
+function setSpeak(m) {
+  speakMode = m; store.set("speak", m);
+  if (m !== "off") { for (const id in spoken) delete spoken[id]; say(m === "all" ? "Spoken alerts on." : "Spoken alerts on, for critical alerts only."); }
+  else if (canSpeak()) try { window.speechSynthesis.cancel(); } catch {}
+  renderSpeak();
+}
+
 function afterSample() {
   try { trackDrive(); } catch {}
   const raw = evalRules(), ids = new Set(raw.map(f => f.id));
@@ -1178,6 +1231,7 @@ function afterSample() {
     }
   }
   state.findings = active;
+  speakAlerts(active);
   if (state.recording) {
     state.rows.push([new Date().toISOString(), ...LOG_KEYS.map(k => V[k] == null ? "" : +conv(P[k], V[k]).toFixed(2))]);
     if (state.rows.length > 20000) state.rows.shift();
@@ -2003,6 +2057,9 @@ function show(v, fromHistory) {
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
 }
+$("#spOff").onclick = () => setSpeak("off"); $("#spCrit").onclick = () => setSpeak("critical"); $("#spAll").onclick = () => setSpeak("all");
+$("#speakTest").onclick = () => say("Warning. Coolant running hot. This is a test.");
+renderSpeak();
 $("#backBtn").onclick = () => { if (history.state && history.state.d > 0) history.back(); else show(parentView); };
 history.replaceState({ v: "live", d: 0, sheet: 0 }, "");
 window.addEventListener("popstate", e => {
