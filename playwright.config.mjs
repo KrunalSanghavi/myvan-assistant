@@ -4,6 +4,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests",
   timeout: 30000,
+  workers: process.env.CI ? undefined : 3, // more parallel browsers make the demo van's timing flaky locally
   reporter: process.env.CI ? [["list"], ["github"]] : "list",
   use: { channel: process.env.CI ? undefined : (process.env.PW_CHANNEL || "chrome"), headless: true, acceptDownloads: true },
   webServer: { command: "npx --yes http-server -p 8123 -c-1 -s .", url: "http://127.0.0.1:8123/index.html", reuseExistingServer: !process.env.CI },
