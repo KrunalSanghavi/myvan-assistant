@@ -1,5 +1,10 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F3F4F1" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1113" media="(prefers-color-scheme: dark)">
@@ -292,7 +297,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 .hero .t{display:flex;flex-direction:column;gap:4px}
 .hero > .btn{align-self:flex-start}
 </style>
-
+</head>
+<body>
 <div class="app">
   <header class="top">
     <button class="back" id="backBtn" type="button" aria-label="Back" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -431,7 +437,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.2"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.3"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -2085,3 +2091,5 @@ document.addEventListener("visibilitychange", () => {
 $("#appVer").textContent = APP_VERSION;
 renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth();
 </script>
+</body>
+</html>
