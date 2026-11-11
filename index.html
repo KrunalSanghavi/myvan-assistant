@@ -1,4 +1,4 @@
-<title>Tardis Monitor</title>
+<title>MyVan Assistant</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
@@ -238,7 +238,7 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
 
 <div class="app">
   <header class="top">
-    <div class="brand"><img src="icon-192.png" alt=""><div><h1>Tardis Monitor</h1><span>2018 Honda Odyssey Elite · 3.5L V6</span></div></div>
+    <div class="brand"><img src="icon-192.png" alt=""><div><h1>MyVan Assistant</h1><span>2018 Honda Odyssey Elite · 3.5L V6</span></div></div>
     <span class="pill" id="connPill"><i></i><span id="connText">Not connected</span></span>
     <button class="btn small primary" id="installBtn" hidden>Install app</button>
     <button class="btn small" id="discBtn" hidden>Disconnect</button>
@@ -307,7 +307,7 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
     </div>
     <div class="panel prose">
       <h3>Adapter power and the van's battery</h3>
-      <p>The OBD-II port has power even with the van off, so a plugged-in adapter always draws a little current. Tardis Monitor keeps that low:</p>
+      <p>The OBD-II port has power even with the van off, so a plugged-in adapter always draws a little current. MyVan Assistant keeps that low:</p>
       <ul>
         <li>When you tap <b>Disconnect</b>, it sends the adapter a low-power command (ATLP) before letting go. Adapters with a genuine ELM327-type chip go to sleep right away; clones that don't support it ignore it.</li>
         <li>It never turns off an adapter's automatic sleep. The Vgate iCar Pro, for example, sleeps by itself after about 30 minutes with no data on the van's network.</li>
@@ -318,7 +318,7 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
     </div>
     <div class="panel prose">
       <h3>Adapter setup</h3>
-      <p class="muted" style="font-size:.85rem">Tardis Monitor version 2.0</p>
+      <p class="muted" style="font-size:.85rem">MyVan Assistant version <span id="appVer"></span></p>
       <ul>
         <li><b>Phone:</b> use a Bluetooth LE adapter, such as a Vgate iCar Pro BLE or OBDLink CX, in Chrome on Android. Older "classic Bluetooth" ELM327 adapters can't be reached from a browser. On iPhone, use the Bluefy browser, since Safari and Chrome on iOS have no Bluetooth support.</li>
         <li><b>Laptop:</b> a USB ELM327 adapter or a Bluetooth LE adapter, in Chrome or Edge. Most USB adapters run at 38400 baud; try 115200 if it won't answer.</li>
@@ -356,6 +356,7 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
 
 <script>
 "use strict";
+const APP_VERSION = "2.0"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1613,7 +1614,7 @@ $("#dlBtn").onclick = () => {
   if (!state.rows.length) { $("#copyMsg").textContent = "Nothing recorded yet. Start recording while connected."; return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv()], { type: "text/csv" }));
-  a.download = "tardis-log-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv";
+  a.download = "myvan-log-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv";
   document.body.appendChild(a); a.click(); a.remove();
   $("#copyMsg").textContent = inFrame ? "Downloads are blocked inside Claude. Use Copy CSV here, or download from the saved file." : "Download started.";
 };
@@ -1645,5 +1646,6 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden && state.elm && state.mode !== "demo") hiddenTimer = setTimeout(() => disconnect("Disconnected after 10 minutes in the background to save the van's battery."), 600000);
 });
 
+$("#appVer").textContent = APP_VERSION;
 renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth();
 </script>

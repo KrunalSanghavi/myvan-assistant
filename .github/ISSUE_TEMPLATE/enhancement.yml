@@ -1,0 +1,15 @@
+name: Enhancement
+description: A new feature or roadmap item
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What and why, description: What should the app do, and what problem does it solve? }
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes: { label: Acceptance criteria, description: "Checkboxes that define done, e.g. - [ ] Shows X on the Health screen", value: "- [ ] " }
+    validations: { required: true }
+  - type: dropdown
+    id: hardware
+    attributes: { label: Can it be verified with the demo van?, options: ["Yes, demo van is enough", "No, needs the real van or adapter"] }
