@@ -1,0 +1,1649 @@
+<title>Tardis Monitor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: frosted header and tab bar floating over a grouped background; content in rounded panels; readings set large and light. */
+:root{
+  --bg:#F2F2F7; --surface:#FFFFFF; --surface-2:#F2F2F7; --fill:#E9E9EE; --line:#DCDCE1; --fg:#1D1D1F; --muted:#6E6E73;
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#E6F0FC;
+  --ok:#248A3D; --ok-bg:#E3F3E7; --warn:#C25400; --warn-bg:#FFF0DE; --crit:#D70015; --crit-bg:#FDE6E8;
+  --band:#E2F2E6; --track:#E5E5EA; --spark:#0071E3; --scrim:rgba(0,0,0,.3);
+  --glass:rgba(242,242,247,.78); --glass-bar:rgba(250,250,252,.82);
+  --shadow:0 1px 1px rgba(0,0,0,.03),0 3px 12px rgba(0,0,0,.05);
+  --f-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,"Segoe UI",sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,"Segoe UI",sans-serif;
+  --f-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#000000; --surface:#1C1C1E; --surface-2:#2C2C2E; --fill:#2C2C2E; --line:#38383A; --fg:#F5F5F7; --muted:#98989D;
+  --accent:#2997FF; --accent-ink:#FFFFFF; --accent-soft:#0B2744;
+  --ok:#30D158; --ok-bg:#0F2E19; --warn:#FF9F0A; --warn-bg:#33230A; --crit:#FF453A; --crit-bg:#3A1311;
+  --band:#123420; --track:#2C2C2E; --spark:#2997FF; --scrim:rgba(0,0,0,.6);
+  --glass:rgba(0,0,0,.72); --glass-bar:rgba(22,22,24,.82); --shadow:none; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#000000; --surface:#1C1C1E; --surface-2:#2C2C2E; --fill:#2C2C2E; --line:#38383A; --fg:#F5F5F7; --muted:#98989D;
+  --accent:#2997FF; --accent-ink:#FFFFFF; --accent-soft:#0B2744;
+  --ok:#30D158; --ok-bg:#0F2E19; --warn:#FF9F0A; --warn-bg:#33230A; --crit:#FF453A; --crit-bg:#3A1311;
+  --band:#123420; --track:#2C2C2E; --spark:#2997FF; --scrim:rgba(0,0,0,.6);
+  --glass:rgba(0,0,0,.72); --glass-bar:rgba(22,22,24,.82); --shadow:none; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.47;-webkit-font-smoothing:antialiased;letter-spacing:-.005em}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:2px}
+.app{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 calc(100px + env(safe-area-inset-bottom,0px))}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.12;letter-spacing:-.02em}
+h2{font-size:1.75rem;font-weight:700}
+h3{font-size:1.08rem;font-weight:600;letter-spacing:-.01em}
+p{margin:0}
+a{color:var(--accent)}
+.muted{color:var(--muted)}
+.mono{font-family:var(--f-mono)}
+.label{font-size:.78rem;color:var(--muted);font-weight:600;letter-spacing:0}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;display:flex;align-items:center;gap:10px;padding-block:10px;margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding-inline:max(16px,env(safe-area-inset-left,0px));background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.brand img{width:30px;height:30px;border-radius:7px;flex:none}
+.brand div{display:flex;flex-direction:column;min-width:0}
+.brand h1{font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
+.brand span{font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:.76rem;font-weight:600;background:var(--fill);color:var(--muted);white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
+.pill.on{background:var(--ok-bg);color:var(--ok)}
+.pill.demo{background:var(--accent-soft);color:var(--accent)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;background:var(--fill);border-radius:980px;padding:9px 18px;font-weight:500;cursor:pointer;min-height:40px;transition:filter .15s,transform .1s}
+.btn:hover{filter:brightness(.96)}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.danger{background:var(--crit-bg);color:var(--crit)}
+.btn.small{min-height:32px;padding:5px 13px;font-size:.84rem}
+.btn:disabled{opacity:.45;cursor:default}
+.link{background:none;border:0;padding:0;color:var(--accent);font-weight:500;cursor:pointer}
+.link:hover{text-decoration:underline}
+
+section.view{padding-top:22px;display:flex;flex-direction:column;gap:22px}
+.panel{background:var(--surface);border-radius:16px;padding:18px;box-shadow:var(--shadow)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.notice{border-radius:12px;padding:12px 14px;background:var(--fill);font-size:.9rem}
+.notice.warn{background:var(--warn-bg)}
+.notice b{font-weight:600}
+
+/* connect */
+.connect{display:grid;gap:18px;grid-template-columns:1fr}
+@media (min-width:820px){.connect{grid-template-columns:1.25fr 1fr;align-items:start}}
+.connect h2{font-size:2.1rem}
+.choices{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.choice{display:flex;gap:14px;align-items:center;text-align:left;background:none;border:0;padding:14px 16px;cursor:pointer;width:100%}
+.choice + .choice{border-top:.5px solid var(--line)}
+.choice:hover{background:var(--surface-2)}
+.choice .ico{flex:none;width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.choice .ico svg{width:22px;height:22px}
+.choice:last-child .ico{background:var(--muted)}
+.choice > div{flex:1;min-width:0}
+.choice b{display:block;font-weight:600}
+.choice span{font-size:.86rem;color:var(--muted)}
+.choice::after{content:"›";font-size:1.4rem;color:var(--muted);line-height:1}
+.choice select{border:0;background:var(--fill);border-radius:6px;padding:1px 4px}
+.port{font-family:var(--f-mono);font-size:.78rem;line-height:1.45;background:var(--surface-2);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;color:var(--muted)}
+.log-lines{font-family:var(--f-mono);font-size:.78rem;max-height:200px;overflow:auto;background:var(--surface-2);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all}
+
+/* summary */
+.strip{display:flex;flex-direction:column;gap:12px}
+.hero{background:var(--surface);border-radius:18px;padding:18px 20px;box-shadow:var(--shadow);display:flex;gap:16px;align-items:center}
+.hero-ico{flex:none;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--ok-bg);color:var(--ok)}
+.hero-ico svg{width:24px;height:24px}
+.hero.warn .hero-ico{background:var(--warn-bg);color:var(--warn)}
+.hero.crit .hero-ico{background:var(--crit-bg);color:var(--crit)}
+.hero .t{flex:1;min-width:0}
+.hero h3{font-size:1.3rem;font-weight:700}
+.hero p{color:var(--muted);font-size:.9rem}
+.cells{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:700px){.cells{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.cell{background:var(--surface);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left;border:0}
+button.cell{cursor:pointer}
+.cell .v{font-family:var(--f-display);font-size:1.45rem;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.cell .s{font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:.74rem;font-weight:600;padding:2px 8px;border-radius:980px;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.warn,.chip.med{background:var(--warn-bg);color:var(--warn)}
+.chip.crit,.chip.stop,.chip.high{background:var(--crit-bg);color:var(--crit)}
+.chip.low,.chip.na{background:var(--fill);color:var(--muted)}
+
+/* tiles */
+.group{display:flex;flex-direction:column;gap:10px}
+.group > .label{padding-left:4px;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:700px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (min-width:980px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{background:var(--surface);border:0;border-radius:16px;padding:14px 14px 10px;display:flex;flex-direction:column;gap:6px;text-align:left;cursor:pointer;min-width:0;box-shadow:var(--shadow);transition:transform .12s,box-shadow .2s}
+.tile:hover{transform:translateY(-1px)}
+.tile.warn{box-shadow:inset 0 0 0 1.5px var(--warn),var(--shadow)}
+.tile.crit{box-shadow:inset 0 0 0 1.5px var(--crit),var(--shadow)}
+.tile .hd{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.tile .name{font-size:.8rem;color:var(--muted);font-weight:500;line-height:1.25;min-height:2.5em}
+.tile .st{font-size:.7rem;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;color:var(--ok)}
+.tile .st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.tile .st.none{color:var(--muted)}
+.tile .st.none::before{opacity:.5}
+.tile.warn .st{color:var(--warn)}
+.tile.crit .st{color:var(--crit)}
+.tile .val{display:flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}
+.tile .val b{font-family:var(--f-display);font-size:2.05rem;font-weight:300;line-height:1;letter-spacing:-.03em}
+.tile.warn .val b{color:var(--warn);font-weight:400}
+.tile.crit .val b{color:var(--crit);font-weight:400}
+.tile .val small{font-size:.8rem;color:var(--muted)}
+.range{position:relative;height:4px;border-radius:2px;background:var(--track);margin-top:2px}
+.range .band{position:absolute;top:0;bottom:0;background:var(--ok);opacity:.35;border-radius:2px}
+.range .mark{position:absolute;top:-4px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2.5px solid var(--fg);transform:translateX(-6px);transition:left .3s ease}
+.tile.warn .range .mark{border-color:var(--warn)}
+.tile.crit .range .mark{border-color:var(--crit)}
+.tile svg.spark{width:100%;height:30px;display:block;margin-top:2px}
+.spark .bandr{fill:var(--band)}
+.spark .line{fill:none;stroke:var(--spark);stroke-width:1.6;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.spark .area{fill:var(--spark);opacity:.08}
+.spark .seg-warn{fill:none;stroke:var(--warn);stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.spark .seg-crit{fill:none;stroke:var(--crit);stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.spark .dot{stroke:var(--spark);stroke-width:6;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.spark .dot.warn{stroke:var(--warn)} .spark .dot.crit{stroke:var(--crit)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.78rem;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+/* lists */
+.list{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.item{padding:14px 16px;display:flex;gap:14px;align-items:center}
+.item + .item{border-top:.5px solid var(--line)}
+.item .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.code{font-family:var(--f-mono);font-weight:500;font-size:.98rem;background:var(--fill);border-radius:8px;padding:4px 8px;white-space:nowrap}
+.empty{background:var(--surface);border-radius:16px;padding:22px;color:var(--muted);text-align:center;box-shadow:var(--shadow)}
+.lookup{display:flex;gap:8px;flex-wrap:wrap}
+.lookup input{flex:1;min-width:0;max-width:220px;text-transform:uppercase;font-family:var(--f-mono);border:0;background:var(--fill);border-radius:10px;padding:8px 12px;min-height:40px}
+.confirm{background:var(--crit-bg);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+
+/* vehicle */
+.kv{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr);gap:10px 20px;font-size:.93rem;margin:0}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-word;text-align:right}
+.monitors{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.mon{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:.88rem}
+.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px}
+.seg button{border:0;background:none;padding:6px 16px;cursor:pointer;font-weight:500;font-size:.88rem;border-radius:7px}
+.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.prose{display:flex;flex-direction:column;gap:10px;max-width:68ch;font-size:.93rem}
+.prose ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px}
+
+/* tabs */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--glass-bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(4px,env(safe-area-inset-left,0px));padding-right:max(4px,env(safe-area-inset-right,0px))}
+nav.tabs button{flex:1;max-width:140px;background:none;border:0;padding:7px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.66rem;font-weight:500;color:var(--muted);cursor:pointer;position:relative}
+nav.tabs svg{width:24px;height:24px}
+nav.tabs button[aria-selected="true"]{color:var(--accent)}
+nav.tabs .badge{position:absolute;top:3px;left:calc(50% + 7px);min-width:17px;height:17px;border-radius:9px;background:var(--crit);color:#fff;font-size:.66rem;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 4px}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:50;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
+.sheet{background:var(--bg);width:100%;max-width:680px;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:20px max(18px,env(safe-area-inset-right,0px)) calc(26px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px;animation:rise .28s cubic-bezier(.2,.8,.2,1)}
+@media (min-width:760px){.scrim{align-items:center}.sheet{border-radius:16px;max-height:86%}}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{transform:translateY(24px);opacity:0}}
+.sheet header{display:flex;gap:12px;align-items:flex-start}
+.sheet header .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.sheet h2{font-size:1.6rem}
+.sheet .block{background:var(--surface);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.close{border:0;background:var(--fill);color:var(--muted);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:1.1rem;flex:none;line-height:1}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;background:var(--surface);border-radius:14px;overflow:hidden}
+.steps li + li{border-top:.5px solid var(--line)}
+.steps li label{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;cursor:pointer}
+.steps li .n{font-size:.8rem;color:var(--muted);min-width:1.2em;padding-top:1px;font-variant-numeric:tabular-nums}
+.steps input{width:20px;height:20px;margin-top:0;flex:none;accent-color:var(--accent)}
+.steps li.done label span.txt{color:var(--muted);text-decoration:line-through}
+.watch{display:flex;flex-wrap:wrap;gap:8px}
+.watch div{background:var(--surface);border-radius:10px;padding:7px 11px;font-size:.85rem;font-variant-numeric:tabular-nums}
+.watch b{font-weight:600}
+textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(--surface);padding:12px;resize:vertical}
+.bigspark{width:100%;height:120px;display:block}
+/* health */
+.hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.hcard{background:var(--surface);border:0;border-radius:16px;padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;text-align:left;cursor:pointer;min-width:0}
+.hcard .hd{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.hcard .hd > span:first-child{display:flex;flex-direction:column;min-width:0}
+.hcard small{color:var(--muted);font-size:.8rem}
+.hcard .line{font-size:.86rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hcard.warn{box-shadow:inset 0 0 0 1.5px var(--warn),var(--shadow)}
+.hcard.crit{box-shadow:inset 0 0 0 1.5px var(--crit),var(--shadow)}
+.meter{display:block;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--ok);border-radius:3px}
+.hcard.warn .meter i,.meter.warn i{background:var(--warn)}
+.hcard.crit .meter i,.meter.crit i{background:var(--crit)}
+.mlab{font-size:.75rem;color:var(--muted);margin-top:-4px}
+.item .body .meter{margin-top:5px;max-width:220px}
+.inp{border:0;background:var(--fill);border-radius:10px;padding:8px 10px;min-height:38px;width:100%;min-width:0}
+#m-odo{max-width:160px}
+.mlist{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--surface-2)}
+.mrow + .mrow{border-top:.5px solid var(--line)}
+.mrow summary{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 12px;cursor:pointer;list-style:none}
+.mrow summary::-webkit-details-marker{display:none}
+.mform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 12px 12px}
+@media (min-width:700px){.mform{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.mform label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted)}
+.trend{width:100%;height:90px;display:block}
+.spark .thr{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;opacity:.8}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><img src="icon-192.png" alt=""><div><h1>Tardis Monitor</h1><span>2018 Honda Odyssey Elite · 3.5L V6</span></div></div>
+    <span class="pill" id="connPill"><i></i><span id="connText">Not connected</span></span>
+    <button class="btn small primary" id="installBtn" hidden>Install app</button>
+    <button class="btn small" id="discBtn" hidden>Disconnect</button>
+  </header>
+
+  <!-- LIVE -->
+  <section class="view" id="view-live">
+    <div id="connectBox"></div>
+    <div id="liveBox" hidden>
+      <div class="strip" id="strip"></div>
+      <div id="groups" style="display:flex;flex-direction:column;gap:22px;margin-top:18px"></div>
+    </div>
+  </section>
+
+  <!-- HEALTH -->
+  <section class="view" id="view-health" hidden>
+    <div><h2>Health</h2><p class="muted" style="margin-top:4px;font-size:.92rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p></div>
+    <div id="healthOut" style="display:flex;flex-direction:column;gap:22px"></div>
+    <div class="group"><span class="label">Parts age and maintenance</span><div class="panel" id="maintOut" style="display:flex;flex-direction:column;gap:12px"></div></div>
+    <p class="muted" style="font-size:.84rem;max-width:68ch">Grades are estimates to help you plan, not a guarantee. Self-test limits come from the engine computer itself. Trend warnings get more reliable after a couple of weeks of normal driving. Confirm with the troubleshooting steps or a mechanic before buying parts.</p>
+  </section>
+
+  <!-- CODES -->
+  <section class="view" id="view-codes" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2>Trouble codes</h2>
+      <div class="row">
+        <button class="btn primary" id="readBtn">Read codes</button>
+        <button class="btn danger" id="clearBtn">Clear codes</button>
+      </div>
+    </div>
+    <div id="clearConfirm" hidden></div>
+    <div id="codesOut"><div class="empty">Connect to the van, then tap <b>Read codes</b>. Stored, pending and permanent codes all show here.</div></div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+      <h3>Look up a code</h3>
+      <p class="muted" style="font-size:.9rem">Works without the adapter. Type any code from another scanner or a parts-store printout.</p>
+      <form class="lookup" id="lookupForm"><input id="lookupIn" maxlength="5" placeholder="P0171" aria-label="Trouble code" autocomplete="off"><button class="btn" type="submit">Open steps</button></form>
+    </div>
+  </section>
+
+  <!-- CHECKS -->
+  <section class="view" id="view-checks" hidden>
+    <div><h2>Live alerts</h2><p class="muted" style="margin-top:4px;font-size:.92rem">Live readings are compared against normal ranges for this engine. A reading has to stay out of range for a few seconds before it is flagged.</p></div>
+    <div id="checksOut"></div>
+  </section>
+
+  <!-- VEHICLE -->
+  <section class="view" id="view-vehicle" hidden>
+    <h2>Vehicle and adapter</h2>
+    <div class="panel"><dl class="kv" id="vehKv"></dl></div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <div class="row" style="justify-content:space-between"><h3>Readiness monitors</h3><button class="btn small" id="monBtn">Refresh</button></div>
+      <p class="muted" style="font-size:.88rem">Self-tests the engine computer runs while you drive. After codes are cleared or the battery is disconnected they reset to "Not ready" and finish over a few days of normal driving.</p>
+      <div class="monitors" id="monOut"><div class="empty" style="grid-column:1/-1">Connect to see monitor status.</div></div>
+    </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <h3>Units</h3>
+      <div class="seg" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph</button><button id="uMet" type="button">°C · km/h</button></div>
+    </div>
+    <div class="panel prose">
+      <h3>What this tool can and can't see</h3>
+      <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
+      <p>Honda-only systems such as ABS/VSA, airbags, the body modules, tire pressure, Honda Sensing and detailed 10-speed transmission data use Honda's own protocols. Those need Honda's i-HDS software or a scanner that supports Honda enhanced data.</p>
+      <p><b>Other cars:</b> live data, trouble codes and readiness monitors work on any gasoline car sold in the US from 1996 on. The normal ranges, warnings and troubleshooting steps are tuned for this van's 3.5L V6, so on a different engine some idle and airflow warnings may be wrong.</p>
+      <p>The troubleshooting steps here are general diagnostic guidance written for this engine. For exact specifications, wiring diagrams and pinpoint tests, use Honda's official service information at <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>, which sells short-term access. Each code has a notes box where you can keep what you find there.</p>
+    </div>
+    <div class="panel prose">
+      <h3>Adapter power and the van's battery</h3>
+      <p>The OBD-II port has power even with the van off, so a plugged-in adapter always draws a little current. Tardis Monitor keeps that low:</p>
+      <ul>
+        <li>When you tap <b>Disconnect</b>, it sends the adapter a low-power command (ATLP) before letting go. Adapters with a genuine ELM327-type chip go to sleep right away; clones that don't support it ignore it.</li>
+        <li>It never turns off an adapter's automatic sleep. The Vgate iCar Pro, for example, sleeps by itself after about 30 minutes with no data on the van's network.</li>
+        <li>It disconnects on its own after 10 minutes in the background, so a forgotten session doesn't keep the adapter awake.</li>
+        <li>It only talks to the adapter while the app is open. Nothing runs when the app is closed.</li>
+      </ul>
+      <p>An adapter that never sleeps can draw around 50 mA, enough to run a battery down over a few weeks of parking. If the van will sit for more than a week or two, unplug the adapter.</p>
+    </div>
+    <div class="panel prose">
+      <h3>Adapter setup</h3>
+      <p class="muted" style="font-size:.85rem">Tardis Monitor version 2.0</p>
+      <ul>
+        <li><b>Phone:</b> use a Bluetooth LE adapter, such as a Vgate iCar Pro BLE or OBDLink CX, in Chrome on Android. Older "classic Bluetooth" ELM327 adapters can't be reached from a browser. On iPhone, use the Bluefy browser, since Safari and Chrome on iOS have no Bluetooth support.</li>
+        <li><b>Laptop:</b> a USB ELM327 adapter or a Bluetooth LE adapter, in Chrome or Edge. Most USB adapters run at 38400 baud; try 115200 if it won't answer.</li>
+        <li>The OBD-II port is under the dash, left of the steering column. Turn the ignition on (engine on for live data) before connecting.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- LOG -->
+  <section class="view" id="view-log" hidden>
+    <h2>Session log</h2>
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <p class="muted" style="font-size:.92rem">Record a drive while a problem happens, then copy the readings as CSV for a spreadsheet or to share with your mechanic.</p>
+      <div class="row"><button class="btn primary" id="recBtn">Start recording</button><button class="btn" id="copyBtn">Copy CSV</button><button class="btn" id="dlBtn">Download CSV</button><span class="muted" id="recInfo">0 rows</span></div>
+      <span class="muted" id="copyMsg" role="status" style="font-size:.88rem"></span>
+      <textarea id="csvFallback" hidden readonly aria-label="CSV data"></textarea>
+    </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+      <h3>Adapter traffic</h3>
+      <div class="log-lines" id="traffic">Nothing yet.</div>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" data-v="live" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/></svg>Live</button>
+  <button role="tab" data-v="health" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>Health</button>
+  <button role="tab" data-v="codes" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M8 9V6M16 9V6M12 19v2"/></svg>Codes<span class="badge" id="codeBadge" hidden></span></button>
+  <button role="tab" data-v="checks" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>Alerts<span class="badge" id="checkBadge" hidden></span></button>
+  <button role="tab" data-v="vehicle" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l2-6a2 2 0 0 1 2-1.4h10a2 2 0 0 1 2 1.4l2 6v3h-3M6 18H3"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="16.5" cy="18" r="1.6"/></svg>Vehicle</button>
+  <button role="tab" data-v="log" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
+</nav>
+
+<div id="sheetRoot"></div>
+
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex2 = n => n.toString(16).toUpperCase().padStart(2, "0");
+const toHex = arr => arr.map(hex2).join("");
+const u8 = v => [Math.max(0, Math.min(255, Math.round(v)))];
+const u16 = v => { v = Math.max(0, Math.min(65535, Math.round(v))); return [v >> 8, v & 255]; };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("odx:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} }
+};
+let units = store.get("units", "us");
+
+/* ---------- parameters (internal values are metric) ---------- */
+const PARAMS = [
+  { pid: 0x0C, key: "rpm", name: "Engine speed", kind: "rpm", n: 2, f: b => (b[0] * 256 + b[1]) / 4, enc: v => u16(v * 4), g: [0, 6500], normal: [600, 850], note: "warm idle in Park", fast: true, group: "Engine",
+    desc: "How fast the crankshaft is turning. A warm idle should be steady; a hunting or rough idle often shows up as RPM wandering." },
+  { pid: 0x0D, key: "speed", name: "Vehicle speed", kind: "speed", n: 1, f: b => b[0], enc: v => u8(v), g: [0, 160], fast: true, group: "Engine",
+    desc: "Road speed as the engine computer sees it." },
+  { pid: 0x04, key: "load", name: "Calculated engine load", kind: "pct", n: 1, f: b => b[0] * 100 / 255, enc: v => u8(v * 2.55), g: [0, 100], normal: [15, 35], note: "warm idle", fast: true, group: "Engine",
+    desc: "How hard the engine is working compared with its maximum. High load at idle can point to a drag on the engine or a sensor reading wrong." },
+  { pid: 0x11, key: "tps", name: "Throttle position", kind: "pct", n: 1, f: b => b[0] * 100 / 255, enc: v => u8(v * 2.55), g: [0, 100], fast: true, group: "Engine",
+    desc: "Electronic throttle opening. Honda reports a small value (often 10–20%) even with your foot off the pedal." },
+  { pid: 0x0B, key: "map", name: "Intake manifold pressure", kind: "kpa", n: 1, f: b => b[0], enc: v => u8(v), g: [0, 105], normal: [25, 45], note: "warm idle", group: "Engine",
+    desc: "Vacuum in the intake. Low numbers mean strong vacuum. A high reading at idle can mean a vacuum leak, valve timing problem or low compression." },
+  { pid: 0x10, key: "maf", name: "Mass airflow", kind: "gs", n: 2, f: b => (b[0] * 256 + b[1]) / 100, enc: v => u16(v * 100), g: [0, 160], normal: [2.5, 5.5], note: "warm idle", fast: true, group: "Engine",
+    desc: "Air entering the engine, measured by the MAF sensor in the intake tube. On a 3.5L V6 a warm idle is roughly 3–5 g/s." },
+  { pid: 0x0E, key: "timing", name: "Ignition timing advance", kind: "deg", n: 1, f: b => b[0] / 2 - 64, enc: v => u8((v + 64) * 2), g: [-10, 50], normal: [5, 20], note: "warm idle", group: "Engine",
+    desc: "When the spark fires, in degrees before top dead center. The computer pulls timing back if the knock sensors hear pinging." },
+  { pid: 0x05, key: "ect", name: "Coolant temperature", kind: "temp", n: 1, f: b => b[0] - 40, enc: v => u8(v + 40), g: [-20, 130], normal: [82, 104], note: "fully warmed up", group: "Temperatures",
+    desc: "Engine coolant temperature. It should climb steadily after a cold start and settle once the thermostat opens." },
+  { pid: 0x0F, key: "iat", name: "Intake air temperature", kind: "temp", n: 1, f: b => b[0] - 40, enc: v => u8(v + 40), g: [-20, 80], group: "Temperatures",
+    desc: "Temperature of incoming air, read by a sensor built into the MAF. A reading of exactly −40° usually means an open circuit." },
+  { pid: 0x46, key: "amb", name: "Outside air temperature", kind: "temp", n: 1, f: b => b[0] - 40, enc: v => u8(v + 40), g: [-20, 50], group: "Temperatures",
+    desc: "Ambient temperature. Useful for judging warm-up time and intake temperature." },
+  { pid: 0x5C, key: "oil", name: "Engine oil temperature", kind: "temp", n: 1, f: b => b[0] - 40, enc: v => u8(v + 40), g: [-20, 150], normal: [80, 120], group: "Temperatures",
+    desc: "Engine oil temperature." },
+  { pid: 0x3C, key: "cat1", name: "Catalyst temperature, bank 1", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 820], note: "warm, running", group: "Temperatures",
+    desc: "Estimated temperature of the rear-bank catalytic converter. Misfires send it very high." },
+  { pid: 0x3D, key: "cat2", name: "Catalyst temperature, bank 2", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 820], note: "warm, running", group: "Temperatures",
+    desc: "Estimated temperature of the front-bank catalytic converter." },
+  { pid: 0x06, key: "stft1", name: "Short-term fuel trim, bank 1", kind: "trim", n: 1, f: b => (b[0] - 128) * 100 / 128, enc: v => u8(v * 1.28 + 128), g: [-30, 30], normal: [-10, 10], fast: true, group: "Fuel and air",
+    desc: "Moment-to-moment fuel correction for the rear bank (cylinders 1–3). Positive means the computer is adding fuel because it sees a lean mixture." },
+  { pid: 0x07, key: "ltft1", name: "Long-term fuel trim, bank 1", kind: "trim", n: 1, f: b => (b[0] - 128) * 100 / 128, enc: v => u8(v * 1.28 + 128), g: [-30, 30], normal: [-10, 10], group: "Fuel and air",
+    desc: "Learned fuel correction for the rear bank. Staying above +10% points to unmetered air or weak fuel delivery; below −10% points to too much fuel." },
+  { pid: 0x08, key: "stft2", name: "Short-term fuel trim, bank 2", kind: "trim", n: 1, f: b => (b[0] - 128) * 100 / 128, enc: v => u8(v * 1.28 + 128), g: [-30, 30], normal: [-10, 10], fast: true, group: "Fuel and air",
+    desc: "Moment-to-moment fuel correction for the front bank (cylinders 4–6)." },
+  { pid: 0x09, key: "ltft2", name: "Long-term fuel trim, bank 2", kind: "trim", n: 1, f: b => (b[0] - 128) * 100 / 128, enc: v => u8(v * 1.28 + 128), g: [-30, 30], normal: [-10, 10], group: "Fuel and air",
+    desc: "Learned fuel correction for the front bank. Compare with bank 1: if only one bank is off, the cause is usually on that side of the engine." },
+  { pid: 0x44, key: "lambda", name: "Commanded air-fuel ratio (λ)", kind: "lambda", n: 2, f: b => (b[0] * 256 + b[1]) * 2 / 65536, enc: v => u16(v * 32768), g: [0.7, 1.3], normal: [0.97, 1.03], note: "cruise or idle", group: "Fuel and air",
+    desc: "The mixture the computer is asking for. 1.00 is the chemically ideal ratio; it goes richer (below 1) under hard acceleration." },
+  { pid: 0x34, alt: 0x24, key: "af1", name: "Upstream air-fuel sensor, bank 1", kind: "lambda", n: 4, f: b => (b[0] * 256 + b[1]) * 2 / 65536, enc: v => [...u16(v * 32768), 0x80, 0x00], g: [0.7, 1.3], normal: [0.97, 1.03], note: "warm, closed loop", group: "Fuel and air",
+    desc: "The wide-range sensor before the rear-bank converter, reported as λ. It should hover right around 1.00 once warm. A sensor that reacts slowly with age makes fuel control less precise." },
+  { pid: 0x38, alt: 0x28, key: "af2", name: "Upstream air-fuel sensor, bank 2", kind: "lambda", n: 4, f: b => (b[0] * 256 + b[1]) * 2 / 65536, enc: v => [...u16(v * 32768), 0x80, 0x00], g: [0.7, 1.3], normal: [0.97, 1.03], note: "warm, closed loop", group: "Fuel and air",
+    desc: "The wide-range sensor before the front-bank converter, reported as λ." },
+  { pid: 0x15, key: "o2b1s2", name: "Downstream O2, bank 1", kind: "volt", n: 2, f: b => b[0] / 200, enc: v => [...u8(v * 200), 0xFF], g: [0, 1], normal: [0.45, 0.85], note: "warm, cruising", group: "Fuel and air",
+    desc: "Sensor after the rear-bank catalytic converter. With a healthy converter it holds fairly steady. If it swings up and down quickly, the converter may be losing efficiency." },
+  { pid: 0x19, key: "o2b2s2", name: "Downstream O2, bank 2", kind: "volt", n: 2, f: b => b[0] / 200, enc: v => [...u8(v * 200), 0xFF], g: [0, 1], normal: [0.45, 0.85], note: "warm, cruising", group: "Fuel and air",
+    desc: "Sensor after the front-bank catalytic converter." },
+  { pid: 0x2F, key: "fuel", name: "Fuel level", kind: "pct", n: 1, f: b => b[0] * 100 / 255, enc: v => u8(v * 2.55), g: [0, 100], normal: [15, 100], group: "Fuel and air",
+    desc: "Fuel tank level. Some EVAP leak tests only run between roughly 15% and 85% full." },
+  { key: "batt", name: "Battery voltage at port", kind: "volt2", g: [10, 16], normal: [12.6, 14.8], note: "engine running", group: "Electrical", special: true,
+    desc: "Voltage measured by the adapter. Honda's charging system varies output, so 12.6–14.8 V while running is normal; with the engine off a healthy battery reads about 12.4–12.7 V." },
+  { pid: 0x42, key: "ecuv", name: "Engine computer voltage", kind: "volt2", n: 2, f: b => (b[0] * 256 + b[1]) / 1000, enc: v => u16(v * 1000), g: [10, 16], normal: [12.6, 14.8], note: "engine running", group: "Electrical",
+    desc: "Supply voltage seen by the engine computer." },
+  { pid: 0x33, key: "baro", name: "Barometric pressure", kind: "kpa", n: 1, f: b => b[0], enc: v => u8(v), g: [70, 105], group: "Electrical",
+    desc: "Outside air pressure, used for fuel calculations. Around 97–101 kPa near sea level." },
+  { pid: 0x1F, key: "runtime", name: "Time since engine start", kind: "sec", n: 2, f: b => b[0] * 256 + b[1], enc: v => u16(v), group: "hidden",
+    desc: "Seconds since the engine started." }
+];
+const P = Object.fromEntries(PARAMS.map(p => [p.key, p]));
+const BY_PID = Object.fromEntries(PARAMS.filter(p => p.pid != null).map(p => [p.pid, p]));
+const GROUPS = ["Engine", "Temperatures", "Fuel and air", "Electrical"];
+
+function conv(p, v) {
+  if (v == null || isNaN(v)) return null;
+  if (p.kind === "temp") return units === "us" ? v * 9 / 5 + 32 : v;
+  if (p.kind === "speed") return units === "us" ? v * 0.621371 : v;
+  return v;
+}
+function unitOf(p) {
+  return { temp: units === "us" ? "°F" : "°C", speed: units === "us" ? "mph" : "km/h", rpm: "rpm", pct: "%", kpa: "kPa", gs: "g/s", deg: "°", trim: "%", volt: "V", volt2: "V", lambda: "", sec: "" }[p.kind];
+}
+function num(p, v) {
+  const c = conv(p, v);
+  if (c == null) return "—";
+  switch (p.kind) {
+    case "trim": return (c > 0 ? "+" : "") + c.toFixed(1);
+    case "volt": return c.toFixed(2);
+    case "volt2": return c.toFixed(1);
+    case "lambda": return c.toFixed(2);
+    case "gs": return c.toFixed(1);
+    case "deg": return c.toFixed(1);
+    case "sec": { const m = Math.floor(c / 60), s = Math.round(c % 60); return m + ":" + String(s).padStart(2, "0"); }
+    default: return Math.round(c).toString();
+  }
+}
+const fmt = (key, v) => { const p = P[key]; v = v === undefined ? V[key] : v; const u = unitOf(p); return num(p, v) + (u && u !== "°" ? " " + u : u); };
+function normalText(p) {
+  if (!p.normal) return "";
+  const u = unitOf(p);
+  return `${num(p, p.normal[0])}–${num(p, p.normal[1])}${u && u !== "°" ? " " + u : u}${p.note ? " (" + p.note + ")" : ""}`;
+}
+
+/* ---------- troubleshooting guides (general guidance, not Honda's text) ---------- */
+const SEV = { stop: "Stop driving", high: "Fix soon", med: "Schedule a repair", low: "Monitor" };
+const BANKS = "Bank 1 is the rear row of cylinders (1–3, firewall side); bank 2 is the front row (4–6, radiator side). Confirm with the cylinder diagram in the service manual.";
+const G = {};
+const add = (code, o) => { G[code] = o; };
+
+add("P0300", { t: "Random or multiple-cylinder misfire", sev: "high",
+  what: "The engine computer counted misfires on more than one cylinder, or couldn't pin them to one. A flashing check-engine light means the misfire is bad enough to overheat the catalytic converters.",
+  causes: ["Worn spark plugs (check your Maintenance Minder history for item 4)", "A weak ignition coil", "Vacuum leak at the intake, PCV hose or intake boot", "Low fuel pressure or a dirty injector", "Oil fouling on rear-bank plugs, which on this engine can be linked to cylinder deactivation (VCM)"],
+  steps: ["If the check-engine light is flashing, avoid hard acceleration and heavy loads and get it fixed soon.", "Read pending codes as well. A cylinder-specific code (P0301–P0306) narrows the search; lean codes (P0171/P0174) point toward air or fuel delivery.", "At warm idle, compare fuel trims for both banks on the Live screen. Large positive trim on one bank suggests a leak on that side.", "Unplug each coil connector and check for corrosion, oil in the plug well, or a cracked boot.", "Check spark plug age against your records, then pull and inspect the plugs for wear or oil fouling.", "Listen for hissing around the intake with the engine running and inspect the PCV hose and intake boot for cracks.", "If misfires continue, do a compression or leak-down test using the specification in the service manual."],
+  watch: ["rpm", "stft1", "ltft1", "stft2", "ltft2", "cat1", "cat2"] });
+for (let c = 1; c <= 6; c++) {
+  const bank = c <= 3 ? 1 : 2, other = c <= 3 ? c + 1 : c - 1;
+  add("P030" + c, { t: `Cylinder ${c} misfire`, sev: "high",
+    what: `The engine computer detected repeated misfires on cylinder ${c}, on bank ${bank}. ${BANKS}`,
+    causes: [`Ignition coil on cylinder ${c}`, `Spark plug on cylinder ${c}`, "Fuel injector on that cylinder", "Oil in the spark plug well from a leaking valve cover or plug tube seal", "Low compression on that cylinder (less common)"],
+    steps: ["If the check-engine light is flashing, drive gently and get it fixed soon to protect the catalytic converter.", `Remove the coil on cylinder ${c} and look for oil or moisture in the plug well and on the boot.`, `Swap the cylinder ${c} coil with cylinder ${other}. Clear the codes and drive until the misfire returns.`, `If the code moves to cylinder ${other} (P030${other}), replace the coil. If it stays on cylinder ${c}, continue.`, "Pull the spark plug and check the gap, electrode wear and any oil fouling. Replace plugs as a set if they're due.", "Check the injector: listen for an even clicking with a mechanic's stethoscope and measure its resistance against the service manual specification.", "If the plug, coil and injector check out, run a compression test on that cylinder."],
+    watch: ["rpm", "stft" + bank, "ltft" + bank, "cat" + bank] });
+}
+const leanG = b => ({ t: `System too lean, bank ${b}`, sev: "med",
+  what: `The engine computer had to add more fuel than its limit allows on bank ${b} to keep the mixture correct. Something is letting in air the MAF sensor doesn't measure, or not enough fuel is arriving. ${BANKS}`,
+  causes: ["Vacuum leak (intake gasket, PCV hose, brake booster hose, cracked intake boot)", "Dirty or failing MAF sensor", "Weak fuel pump or clogged fuel filter", "Clogged injectors", "Exhaust leak ahead of the front air-fuel sensor"],
+  steps: ["Compare both banks on the Live screen. If only one bank is lean, look for a leak or injector problem on that side. If both are lean, look at shared parts: MAF, intake tube, fuel delivery.", "At warm idle, note the long-term trim. Then hold 2,500 rpm in Park for 30 seconds. If the trim improves at higher RPM, a vacuum leak is likely. If it gets worse, suspect fuel delivery.", "Inspect the intake tube between the MAF and throttle body for cracks or loose clamps, and check the air box lid is sealed.", "Check the PCV valve and hose, and every vacuum line on the intake manifold.", "Clean the MAF sensor with MAF-specific cleaner (never touch the element) and let it dry fully before reinstalling.", "If trims stay high, have fuel pressure tested against the service manual specification, or perform a smoke test for hidden intake leaks."],
+  watch: ["stft" + b, "ltft" + b, "stft" + (3 - b), "ltft" + (3 - b), "maf", "map"] });
+const richG = b => ({ t: `System too rich, bank ${b}`, sev: "med",
+  what: `The engine computer is pulling out more fuel than its limit allows on bank ${b}. Too much fuel is getting in, or the MAF is over-reading. ${BANKS}`,
+  causes: ["Leaking or stuck-open fuel injector", "MAF sensor reading too high", "EVAP purge valve stuck open, pulling fuel vapor into the intake", "Very dirty air filter", "Oil diluted with fuel"],
+  steps: ["Compare both banks. One bank rich points to an injector on that side; both banks rich points to the MAF, purge valve or fuel pressure.", "Check the air filter and replace it if it's dirty.", "Look for other codes: purge codes (P0441, P0496) or misfires.", "Pinch or unplug the purge line briefly at warm idle (per the manual) and watch fuel trims. If they return toward zero, the purge valve is leaking.", "Clean the MAF sensor and recheck trims at idle and 2,500 rpm.", "If trims are still very negative, have the injectors and fuel pressure tested."],
+  watch: ["stft" + b, "ltft" + b, "maf", "lambda"] });
+add("P0171", leanG(1)); add("P0174", leanG(2)); add("P0172", richG(1)); add("P0175", richG(2));
+add("P0128", { t: "Coolant below thermostat temperature", sev: "low",
+  what: "The engine took too long to reach normal operating temperature. Usually the thermostat is stuck partly open.",
+  causes: ["Thermostat stuck open", "Low coolant", "Coolant temperature sensor reading low", "Very cold weather with long idling (rarely the cause by itself)"],
+  steps: ["With the engine cold, check the coolant level in the reservoir and radiator. Never open a hot radiator cap.", "From a cold start, watch coolant temperature on the Live screen. It should rise steadily and reach about 180–190 °F within 10–15 minutes of driving.", "If it climbs and then stalls or drops on the highway, the thermostat is likely stuck open.", "After an overnight cold soak, compare coolant and intake air temperature before starting. They should be within a few degrees. A big difference points to a sensor.", "Replace the thermostat with the correct Honda-spec part and bleed the cooling system per the service manual."],
+  watch: ["ect", "iat", "amb", "runtime"] });
+add("OVERHEAT", { t: "Engine running hot", sev: "stop",
+  what: "Coolant or oil temperature is above the normal range. Continued driving can damage the head gaskets or engine.",
+  causes: ["Low coolant from a leak", "Radiator fan not running", "Thermostat stuck closed", "Water pump failure", "Clogged radiator"],
+  steps: ["If the temperature keeps climbing, pull over safely and turn the engine off.", "Wait until the engine is fully cool before opening anything. Then check the coolant level.", "Look for leaks under the van, at hoses, the water pump area and radiator.", "With the engine idling and warm, check that the radiator fans come on. Turning on the A/C should also start them.", "Check the coolant temperature reading against a real temperature, such as an infrared thermometer at the upper hose, to rule out a bad sensor.", "Have the cooling system pressure-tested if the cause isn't obvious."],
+  watch: ["ect", "oil", "rpm", "speed"] });
+add("P0217", G.OVERHEAT);
+add("P0116", { t: "Coolant temperature sensor range or performance", sev: "med",
+  what: "The coolant temperature reading didn't make sense compared with other sensors or with how long the engine has been running.",
+  causes: ["Failing coolant temperature sensor", "Corroded connector", "Air pocket after a coolant service"],
+  steps: ["After an overnight cold soak, compare coolant and intake air temperatures before starting. They should be close.", "Check the sensor connector for corrosion or loose pins.", "If the cooling system was recently serviced, bleed it per the service manual.", "Replace the sensor if readings are still wrong."],
+  watch: ["ect", "iat", "amb"] });
+add("P0117", { t: "Coolant temperature sensor circuit low", sev: "med", what: "The coolant sensor signal is shorted low, so the reading is implausibly hot.", causes: ["Shorted sensor", "Wiring shorted to ground"], steps: ["Look at the coolant temperature on the Live screen. A reading near the top of the scale with a cold engine confirms it.", "Unplug the sensor. The reading should jump to −40°. If it does, the sensor is shorted; replace it.", "If the reading doesn't change, inspect the wiring for a short to ground."], watch: ["ect"] });
+add("P0118", { t: "Coolant temperature sensor circuit high", sev: "med", what: "The coolant sensor signal is open, so the computer sees an implausibly cold reading.", causes: ["Unplugged or corroded connector", "Broken wire", "Failed sensor"], steps: ["Look at coolant temperature on the Live screen. A reading of −40° means an open circuit.", "Check that the sensor connector is fully seated and free of corrosion.", "Inspect the harness near the thermostat housing for damage.", "Test the sensor resistance against the service manual chart and replace it if it's out of range."], watch: ["ect"] });
+add("P0101", { t: "Mass airflow sensor range or performance", sev: "med",
+  what: "The MAF reading doesn't agree with what the computer expects from RPM, throttle and manifold pressure.",
+  causes: ["Dirty MAF element", "Air leak after the MAF", "Clogged or poorly seated air filter", "Failing sensor"],
+  steps: ["At warm idle, check mass airflow on the Live screen. About 3–5 g/s is typical for this engine.", "Inspect the air filter and make sure the air box is sealed.", "Check the intake tube between the MAF and throttle body for cracks or loose clamps.", "Clean the MAF with MAF-specific cleaner and let it dry fully.", "Check the connector, then recheck. Replace the sensor if readings are still off."],
+  watch: ["maf", "map", "rpm", "load", "ltft1", "ltft2"] });
+add("P0102", { t: "Mass airflow sensor circuit low", sev: "med", what: "The MAF signal is lower than possible.", causes: ["Unplugged or damaged connector", "Open wiring", "Failed sensor"], steps: ["Check the MAF connector is fully seated.", "Inspect the wiring for damage near the air box.", "Check that mass airflow on the Live screen reads close to zero with the engine running. If so, test the circuit per the manual.", "Replace the sensor if the wiring is good."], watch: ["maf"] });
+add("P0103", { t: "Mass airflow sensor circuit high", sev: "med", what: "The MAF signal is higher than possible.", causes: ["Wiring shorted to voltage", "Failed sensor"], steps: ["Inspect the MAF connector and wiring.", "Compare the MAF reading with the engine off and ignition on. It should be near zero.", "Test the circuit per the service manual and replace the sensor if needed."], watch: ["maf"] });
+add("P0113", { t: "Intake air temperature sensor circuit high", sev: "low", what: "The intake air temperature signal is open, so it reads about −40°. The sensor is built into the MAF.", causes: ["MAF connector loose or corroded", "Broken wire", "Failed sensor"], steps: ["Check intake air temperature on the Live screen. −40° confirms an open circuit.", "Reseat the MAF connector and inspect it for corrosion.", "Inspect the wiring near the air box.", "If the wiring is good, replace the MAF/IAT sensor."], watch: ["iat", "amb"] });
+const catG = b => ({ t: `Catalytic converter efficiency below threshold, bank ${b}`, sev: "med",
+  what: `The downstream oxygen sensor shows the bank ${b} converter isn't storing oxygen as well as it should. ${BANKS}`,
+  causes: ["Aged or damaged catalytic converter", "Exhaust leak near the sensors", "Downstream O2 sensor aging", "Misfire or rich running that damaged the converter"],
+  steps: ["Fix any misfire, lean, rich or O2 sensor codes first. They can cause this code and will damage a new converter.", `Drive at a steady 45–55 mph and watch the downstream O2 for bank ${b}. A healthy converter gives a fairly steady 0.5–0.8 V. Rapid swings point to a weak converter.`, "Check for exhaust leaks ahead of and around the downstream sensor (ticking sound, soot marks).", "Check the downstream sensor connector and wiring.", "Converters on this van are emissions parts with longer warranty coverage. Check your warranty before paying for one."],
+  watch: ["o2b" + b + "s2", "cat" + b, "stft" + b, "ltft" + b] });
+add("P0420", catG(1)); add("P0430", catG(2));
+add("CATHOT", { t: "Catalytic converter very hot", sev: "high", what: "Estimated converter temperature is above normal, usually because unburned fuel from a misfire or rich mixture is burning inside it.", causes: ["Misfire", "Rich mixture", "Extended heavy towing or climbing"], steps: ["Reduce load and avoid idling near anything flammable such as dry grass.", "Read codes and look for misfire or rich codes.", "Check fuel trims and misfire-related codes on both banks.", "Fix the underlying misfire or fuel problem before the converter is damaged."], watch: ["cat1", "cat2", "stft1", "stft2", "rpm"] });
+const heaterG = (code, b, s) => add(code, { t: `Oxygen sensor heater circuit, bank ${b} sensor ${s}`, sev: "low", what: `The heater inside the bank ${b}, sensor ${s} ${s === 1 ? "air-fuel" : "oxygen"} sensor isn't working, so the sensor is slow to warm up. ${BANKS}`, causes: ["Failed sensor heater (most common)", "Blown fuse", "Damaged wiring near the exhaust"], steps: ["Check the related fuse listed in the service manual.", "Inspect the sensor connector and wiring for heat damage or rub-through.", "Measure heater resistance at the sensor against the manual specification.", "Replace the sensor if the heater is open. Use the correct Honda-spec sensor."], watch: [s === 1 ? "stft" + b : "o2b" + b + "s2"] });
+heaterG("P0135", 1, 1); heaterG("P0141", 1, 2); heaterG("P0155", 2, 1); heaterG("P0161", 2, 2);
+const afG = (code, b, dir) => add(code, { t: `Air-fuel sensor signal stuck ${dir}, bank ${b} sensor 1`, sev: "med", what: `The upstream air-fuel sensor on bank ${b} reports a ${dir} mixture that doesn't respond to fuel changes. ${BANKS}`, causes: dir === "lean" ? ["Exhaust leak ahead of the sensor", "Real lean condition (vacuum leak)", "Aging sensor"] : ["Real rich condition (leaking injector)", "Contaminated sensor", "Aging sensor"], steps: ["Check fuel trims for that bank. If they are also far off, fix the real mixture problem first (see P0171/P0172).", "Check for exhaust leaks at the manifold and ahead of the sensor.", "Inspect the sensor connector and wiring.", "Replace the sensor if the mixture and exhaust are fine."], watch: ["stft" + b, "ltft" + b, "lambda"] });
+afG("P2195", 1, "lean"); afG("P2196", 1, "rich"); afG("P2197", 2, "lean"); afG("P2198", 2, "rich");
+add("P0335", { t: "Crankshaft position sensor circuit", sev: "high", what: "The engine computer lost or got a bad crankshaft position signal. The engine may stall or not start.", causes: ["Damaged connector or wiring", "Failed sensor", "Debris on the sensor tip"], steps: ["Inspect the crank sensor connector and wiring.", "Remove the sensor and check its tip for metal debris or damage.", "Check its resistance or output per the service manual.", "Replace the sensor if needed and clear the code."], watch: ["rpm"] });
+add("P0340", { t: "Camshaft position sensor circuit, bank 1", sev: "high", what: "The cam position signal for bank 1 is missing or irregular.", causes: ["Connector or wiring problem", "Failed sensor", "Timing belt wear or misalignment"], steps: ["Inspect the sensor connector and wiring.", "Check when the timing belt was last replaced. On this engine it's a scheduled maintenance item.", "Test the sensor per the service manual.", "If the sensor is good, have belt timing verified."], watch: ["rpm"] });
+add("P0345", { t: "Camshaft position sensor circuit, bank 2", sev: "high", what: "The cam position signal for bank 2 is missing or irregular.", causes: G.P0340.causes, steps: G.P0340.steps, watch: ["rpm"] });
+const vtcG = b => ({ t: `Intake camshaft timing over-advanced or system performance, bank ${b}`, sev: "med", what: "Variable valve timing on the intake cam didn't reach the position the computer asked for.", causes: ["Low or old engine oil", "Wrong oil viscosity (this engine calls for 0W-20)", "Sticking oil control solenoid or clogged screen", "Timing belt wear"], steps: ["Check the oil level and condition. Change it with 0W-20 if it's due.", "Inspect the oil control solenoid connector.", "Clear the code and drive. If it returns, have the solenoid and its filter screen checked per the manual.", "If the code persists, have belt timing verified."], watch: ["rpm", "load"] });
+add("P0011", vtcG(1)); add("P0021", vtcG(2));
+add("P0325", { t: "Knock sensor circuit", sev: "low", what: "The knock sensor signal is out of range. The computer retards timing to stay safe, so you may notice less power and lower mileage.", causes: ["Connector or wiring fault", "Failed knock sensor"], steps: ["Check timing advance on the Live screen. Unusually low values at cruise suggest the computer is protecting the engine.", "Inspect the knock sensor connector and wiring (it sits in the engine valley; access is limited).", "Test the circuit per the service manual and replace the sensor if needed."], watch: ["timing", "load"] });
+add("P0455", { t: "EVAP system large leak", sev: "low", what: "The fuel vapor system failed its leak test with a large leak. This van uses a capless fuel filler, so there's no cap to tighten.", causes: ["Debris holding the capless filler flap open", "Disconnected or cracked EVAP hose", "Faulty canister vent valve", "Faulty purge valve"], steps: ["Open the fuel door and inspect the capless filler. Make sure the flap closes and seals. Clean out any dirt.", "Inspect the EVAP hoses near the tank and charcoal canister for cracks or disconnections.", "Clear the code and drive for a few days to see if it returns.", "If it returns, have a smoke test done to find the leak."], watch: ["fuel"] });
+add("P0456", { t: "EVAP system very small leak", sev: "low", what: "The fuel vapor system failed its leak test with a very small leak. It doesn't affect how the van drives.", causes: ["Dirt in the capless filler seal", "Small crack in an EVAP hose", "Canister vent valve seal"], steps: ["Inspect and clean the capless filler and its seal.", "Look for cracked or loose EVAP hoses near the tank and canister.", "Clear the code and drive for several days. The leak test only runs under certain conditions, such as a fuel level between about 15% and 85%.", "If it keeps coming back, a smoke test will find small leaks that can't be seen."], watch: ["fuel"] });
+add("P0457", { t: "EVAP leak detected, fuel filler", sev: "low", what: "The leak test points to the fuel filler area.", causes: ["Capless filler not sealing", "Damaged filler neck"], steps: ["Inspect the capless filler flap and seal, and clean out any debris.", "Use only the Honda funnel when filling from a gas can, so the flap isn't damaged.", "Clear the code and drive for a few days."], watch: ["fuel"] });
+add("P0441", { t: "EVAP purge flow incorrect", sev: "low", what: "Fuel vapor flow from the canister to the engine isn't what the computer expected.", causes: ["Purge valve stuck open or closed", "Blocked or cracked purge hose"], steps: ["A purge valve stuck open often causes rough starting right after refueling. Note whether you see that.", "Inspect the purge hose from the canister to the intake.", "Test the purge valve per the service manual and replace it if needed."], watch: ["stft1", "stft2"] });
+add("P0496", G.P0441);
+add("P0505", { t: "Idle control system", sev: "low", what: "Idle speed isn't matching the target.", causes: ["Dirty throttle body", "Vacuum leak", "Idle relearn needed after battery work or cleaning"], steps: ["Watch RPM at warm idle in Park. It should be steady.", "Check for vacuum leaks around the intake.", "Inspect and clean the throttle body if it's dirty.", "Perform the idle learn procedure from the service manual after cleaning or battery work."], watch: ["rpm", "maf", "tps", "stft1", "stft2"] });
+add("P0506", { ...G.P0505, t: "Idle speed lower than expected" });
+add("P0507", { ...G.P0505, t: "Idle speed higher than expected" });
+add("P0562", { t: "System voltage low", sev: "med", what: "The engine computer saw voltage lower than normal.", causes: ["Weak or aging battery", "Loose or corroded battery terminals", "Alternator not charging", "Bad ground strap"], steps: ["With the engine off for an hour, check battery voltage. About 12.4–12.7 V is healthy.", "Start the engine and watch battery voltage. With the headlights and blower on it should hold above about 13 V.", "Clean and tighten the battery terminals and check the ground straps to the body and engine.", "Have the battery load-tested at a parts store (most do it free).", "If the battery is good and voltage stays low while running, have the alternator tested."], watch: ["batt", "ecuv", "rpm"] });
+add("P0563", { t: "System voltage high", sev: "med", what: "The engine computer saw voltage above normal. Overcharging can damage the battery and electronics.", causes: ["Alternator regulator fault", "Poor battery sense connection"], steps: ["Watch battery voltage with the engine running. Above about 15 V is too high.", "Check battery terminals and the alternator connector.", "Have the charging system tested."], watch: ["batt", "ecuv"] });
+add("BATT", { t: "Battery voltage low with the engine off", sev: "low", what: "Resting battery voltage is low. The van may be slow to start, and a weak battery can set unrelated codes in other modules.", causes: ["Aging battery", "Short drives that don't recharge it", "Something drawing power with the van off"], steps: ["Charge the battery fully, then let it sit for a few hours and recheck.", "Have it load-tested.", "If it keeps going flat, have a parasitic draw test done."], watch: ["batt"] });
+add("FUEL", { t: "Fuel level low", sev: "low", what: "The tank is nearly empty. Running very low can make the fuel pump work harder and may cause lean running on hills.", causes: ["Low fuel"], steps: ["Refuel soon.", "Some EVAP self-tests only run between about 15% and 85% full."], watch: ["fuel"] });
+add("P0606", { t: "Engine computer processor fault", sev: "high", what: "The engine computer reported an internal error.", causes: ["Low or unstable supply voltage", "Poor ground", "Software issue", "Internal computer failure"], steps: ["Check battery voltage and terminals first.", "Inspect the engine computer ground connections.", "Ask a Honda dealer whether a software update is available for your VIN.", "Only consider replacing the computer after power, grounds and software are confirmed."], watch: ["batt", "ecuv"] });
+add("P2101", { t: "Throttle actuator control motor circuit", sev: "high", what: "The electronic throttle isn't responding as commanded. The van may go into reduced-power mode.", causes: ["Throttle body connector problem", "Carbon buildup", "Failed throttle body"], steps: ["Inspect the throttle body connector and wiring.", "Check for carbon buildup and clean if needed, following the manual's cautions for electronic throttles.", "Perform the throttle learn procedure from the service manual.", "Replace the throttle body if the fault returns."], watch: ["tps", "rpm"] });
+add("P2135", { ...G.P2101, t: "Throttle position sensor A/B correlation" });
+add("P0700", { t: "Transmission control system (see transmission codes)", sev: "med", what: "The transmission computer has stored its own fault and asked the engine computer to turn on the check-engine light.", causes: ["A specific transmission fault, stored in the transmission computer"], steps: ["Read codes again. Some adapters show the transmission computer's emissions codes alongside this one.", "Detailed 10-speed codes need a scanner with Honda transmission support or a dealer.", "Note any harsh shifts, slipping or flare between gears and when they happen.", "Ask a dealer whether transmission software updates apply to your VIN.", "Fluid level checks on this transmission follow a specific procedure in the service manual. Don't add fluid without it."], watch: ["speed", "rpm", "load"] });
+add("P0715", { ...G.P0700, t: "Transmission input speed sensor circuit", sev: "high", what: "The transmission input shaft speed signal is missing or wrong. Shifting may be harsh or limited." });
+add("P0720", { ...G.P0700, t: "Transmission output speed sensor circuit", sev: "high", what: "The transmission output shaft speed signal is missing or wrong." });
+add("P0730", { ...G.P0700, t: "Incorrect gear ratio", sev: "high", what: "Engine and output speeds don't match the selected gear, which suggests slipping." });
+add("P0741", { ...G.P0700, t: "Torque converter clutch stuck off", sev: "med", what: "The torque converter clutch isn't locking up as commanded. Fuel economy may drop and RPM may be higher at cruise." });
+add("U0100", { t: "Lost communication with engine computer", sev: "med", what: "Another module couldn't hear the engine computer on the vehicle network.", causes: ["Low battery voltage or a recent jump start", "Loose connector at a module", "Network wiring damage"], steps: ["Check battery voltage and terminals. Low voltage is the most common cause after a jump start.", "Clear codes and see whether they return.", "If they return, inspect connectors at the engine computer and the network wiring per the manual."], watch: ["batt"] });
+add("U0101", { ...G.U0100, t: "Lost communication with transmission computer" });
+
+const SYS = { P: "Powertrain (engine and transmission)", C: "Chassis (brakes, steering, suspension)", B: "Body (airbags, seats, climate, lighting)", U: "Communication between modules" };
+const PSUB = { 0: "Fuel and air metering", 1: "Fuel and air metering", 2: "Fuel injectors and fuel system", 3: "Ignition and misfire", 4: "Emission controls", 5: "Speed, idle control and inputs", 6: "Engine computer and outputs", 7: "Transmission", 8: "Transmission", 9: "Transmission", A: "Hybrid system" };
+function guideFor(code) {
+  code = code.toUpperCase();
+  if (G[code]) return G[code];
+  const sys = SYS[code[0]] || "Unknown system";
+  const mfr = code[1] === "1" || code[1] === "3" ? "a Honda-specific" : "a standard";
+  const sub = code[0] === "P" ? PSUB[code[2]] : null;
+  return { generic: true, t: sub ? `${sub} fault` : `${sys} fault`, sev: "med",
+    what: `${code} is ${mfr} code in the ${sys.toLowerCase()} group${sub ? ", ${sub}".replace("${sub}", sub.toLowerCase()) : ""}. This app doesn't have specific steps for it yet, so the steps below are the general approach.`,
+    causes: ["Look up the exact definition for your VIN in Honda's service information"],
+    steps: ["Write down this code and every other stored and pending code before clearing anything.", "Look up the code definition and its test procedure in the Honda service information for your VIN.", "Check battery voltage first. Weak batteries and jump starts set many unrelated codes.", "Find the sensor or part named in the definition and inspect its connector and wiring for corrosion, loose pins or chafing.", "Clear the code and drive normally to see whether it comes back as pending.", "If it returns, follow the manual's pinpoint test before replacing parts."],
+    watch: ["batt"] };
+}
+
+/* ---------- state ---------- */
+const V = {};               // latest values
+const H = {};               // history per key
+const HL = {};              // status level per sample: 0 normal, 1 warning, 2 critical
+const state = { conn: null, mode: null, elm: null, supported: new Set(), isCan: true, protocol: "", vin: "", elmVer: "", codes: null, monitors: null, mil: null, recording: false, rows: [], findings: [], seen: {}, counters: {} };
+
+/* ---------- ELM327 driver ---------- */
+class Elm {
+  constructor(t) { this.t = t; this.buf = ""; this.q = Promise.resolve(); this.pending = null; t.onData = s => this.onData(s); }
+  onData(s) {
+    this.buf += s;
+    const i = this.buf.indexOf(">");
+    if (i >= 0 && this.pending) {
+      const out = this.buf.slice(0, i); this.buf = this.buf.slice(i + 1);
+      const p = this.pending; this.pending = null; clearTimeout(p.to); p.res(out);
+    }
+  }
+  send(cmd, timeout = 3000) {
+    const run = () => new Promise((res, rej) => {
+      this.buf = "";
+      this.pending = { res, rej };
+      this.pending.to = setTimeout(() => { this.pending = null; rej(new Error("No answer to " + cmd)); }, timeout);
+      Promise.resolve(this.t.write(cmd + "\r")).catch(e => { clearTimeout(this.pending && this.pending.to); this.pending = null; rej(e); });
+    }).then(r => { traffic(cmd, r); return r; });
+    const p = this.q.then(run);
+    this.q = p.catch(() => {});
+    return p;
+  }
+}
+const NOISE = /(SEARCHING\.\.\.|BUS INIT:?\s*(OK|\.\.\.)?|STOPPED|OK)/g;
+function parseMsgs(raw) {
+  const lines = raw.replace(NOISE, "").split(/[\r\n]+/).map(s => s.replace(/\s/g, "").toUpperCase()).filter(Boolean);
+  if (lines.some(l => /UNABLETOCONNECT/.test(l))) throw new Error("UNABLE TO CONNECT");
+  const msgs = []; let cur = null;
+  const hx = s => (s.match(/[0-9A-F]{2}/g) || []).map(h => parseInt(h, 16));
+  for (const l of lines) {
+    if (/NODATA|\?|ERROR/.test(l)) continue;
+    if (/^[0-9A-F]{3}$/.test(l)) { cur = { bytes: [] }; msgs.push(cur); continue; }
+    const m = l.match(/^([0-9A-F]):([0-9A-F]*)$/);
+    if (m) { if (!cur) { cur = { bytes: [] }; msgs.push(cur); } cur.bytes.push(...hx(m[2])); continue; }
+    if (/^[0-9A-F]+$/.test(l)) { msgs.push({ bytes: hx(l) }); cur = null; }
+  }
+  return msgs;
+}
+const dtcStr = (a, b) => "PCBU"[a >> 6] + ((a >> 4) & 3) + (a & 15).toString(16).toUpperCase() + hex2(b);
+function decodeDtcs(bytes, can) {
+  const out = [];
+  for (let i = can ? 2 : 1; i + 1 < bytes.length; i += 2) {
+    if (bytes[i] === 0 && bytes[i + 1] === 0) continue;
+    out.push(dtcStr(bytes[i], bytes[i + 1]));
+  }
+  return out;
+}
+
+/* ---------- demo vehicle (emulates an ELM327 on a CAN bus) ---------- */
+const demo = {
+  t0: 0, cleared: false, clearedAt: 0, runtime0: 1260,
+  sup: new Set([0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x15, 0x19, 0x1F, 0x2F, 0x33, 0x3C, 0x3D, 0x42, 0x44, 0x46, 0x34, 0x38]),
+  vin: "5FNRL6H9XJBDEMO01",
+  vals() {
+    const t = (performance.now() - this.t0) / 1000;
+    const ph = t % 70, drive = ph > 22 && ph < 60;
+    const ramp = drive ? Math.min(1, (ph - 22) / 8, (60 - ph) / 5) : 0;
+    const r = a => (Math.random() - .5) * 2 * a;
+    const speed = Math.max(0, 74 * ramp + r(1.2) * ramp);
+    const rpm = drive ? 900 + speed * 15 + r(40) : 690 + r(18);
+    return {
+      rpm, speed, load: drive ? 28 + ramp * 22 + r(3) : 21 + r(1.2), tps: drive ? 14 + ramp * 12 + r(1) : 13.7,
+      map: drive ? 38 + ramp * 16 + r(2) : 31 + r(1), maf: drive ? 6 + ramp * 16 + r(1) : 3.7 + r(.2),
+      timing: drive ? 24 + r(3) : 12 + r(1.5), ect: Math.min(91, 85 + t * .05) + r(.3), iat: 27 + r(.4), amb: 14,
+      cat1: drive ? 560 + ramp * 120 : 520, cat2: drive ? 575 + ramp * 120 : 530,
+      stft1: r(3), ltft1: 1.6, stft2: 4 + r(3.5), ltft2: 13.3,
+      lambda: drive && ramp > .9 && ph < 35 ? 0.93 : 1.0, af1: 1 + r(.012), af2: 0.996 + r(.02), o2b1s2: .68 + r(.03), o2b2s2: .66 + r(.04),
+      fuel: 41, ecuv: 14.1 + r(.08), batt: 14.1 + r(.05), baro: 99, runtime: this.runtime0 + t
+    };
+  },
+  m06: (() => {
+    const m = { 0x01: [[0x81, 0x10, 180, 0, 400]], 0x05: [[0x81, 0x10, 205, 0, 400]], 0x02: [[0x08, 0x0B, 820, 450, 65535]], 0x06: [[0x08, 0x0B, 805, 450, 65535]],
+      0x21: [[0x80, 0x20, 46, 0, 102]], 0x22: [[0x80, 0x20, 80, 0, 102]], 0x35: [[0x80, 0x1C, 120, 0, 500]], 0x36: [[0x80, 0x1C, 140, 0, 500]],
+      0x3A: [[0x80, 0x29, 200, 0, 1000]], 0x3B: [[0x80, 0x29, 420, 0, 1000]], 0x3C: [[0x80, 0x29, 1050, 0, 1000]],
+      0x41: [[0x81, 0x10, 22, 0, 120]], 0x45: [[0x81, 0x10, 25, 0, 120]], 0x42: [[0x81, 0x10, 40, 0, 150]], 0x46: [[0x81, 0x10, 43, 0, 150]] };
+    const avg = [0, 3, 0, 0, 0, 0], last = [0, 2, 0, 0, 0, 0];
+    for (let c = 1; c <= 6; c++) m[0xA1 + c] = [[0x0B, 0x24, avg[c - 1], 0, 65535], [0x0C, 0x24, last[c - 1], 0, 65535]];
+    return m;
+  })(),
+  bitmask(base) {
+    const b = [0, 0, 0, 0];
+    for (const pid of this.sup) if (pid > base && pid <= base + 32) { const i = pid - base - 1; b[i >> 3] |= 0x80 >> (i & 7); }
+    if ([...this.sup].some(p => p > base + 32)) b[3] |= 1;
+    return b;
+  },
+  codes() {
+    const since = this.cleared ? (performance.now() - this.clearedAt) / 1000 : 1e9;
+    return { stored: this.cleared ? [] : [[0x04, 0x56]], pending: since > 40 ? [[0x01, 0x74]] : [], permanent: [[0x04, 0x56]] };
+  },
+  emulate(cmd) {
+    cmd = cmd.toUpperCase().replace(/\s/g, "");
+    if (cmd === "ATZ" || cmd === "ATI") return "ELM327 v1.5";
+    if (cmd === "ATRV") return this.vals().batt.toFixed(1) + "V";
+    if (cmd === "ATDPN") return "A6";
+    if (cmd === "ATDP") return "AUTO, ISO 15765-4 (CAN 11/500)";
+    if (cmd.startsWith("AT")) return "OK";
+    if (cmd === "0902") {
+      const b = [0x49, 0x02, 0x01, ...[...this.vin].map(c => c.charCodeAt(0))];
+      return ["014", "0:" + toHex(b.slice(0, 6)), "1:" + toHex(b.slice(6, 13)), "2:" + toHex(b.slice(13, 20))].join("\r");
+    }
+    const c = this.codes();
+    const dtcResp = (sid, list) => [toHex([sid, list.length, ...list.flat()]), toHex([sid, 0])].join("\r");
+    if (cmd === "03") return dtcResp(0x43, c.stored);
+    if (cmd === "07") return dtcResp(0x47, c.pending);
+    if (cmd === "0A") return dtcResp(0x4A, c.permanent);
+    if (cmd === "04") { this.cleared = true; this.clearedAt = performance.now(); return "44"; }
+    if (cmd.startsWith("06") && cmd.length === 4) {
+      const mid = parseInt(cmd.slice(2), 16), keys = Object.keys(this.m06).map(Number);
+      if (mid % 0x20 === 0) {
+        const b = [0, 0, 0, 0];
+        for (const k of keys) if (k > mid && k <= mid + 32) { const i = k - mid - 1; b[i >> 3] |= 0x80 >> (i & 7); }
+        if (keys.some(k => k > mid + 32)) b[3] |= 1;
+        return "46" + hex2(mid) + toHex(b);
+      }
+      const recs = this.m06[mid];
+      if (!recs) return "NO DATA";
+      return "46" + recs.map(r => toHex([mid, r[0], r[1], ...u16(r[2]), ...u16(r[3]), ...u16(r[4])])).join("");
+    }
+    if (cmd.startsWith("01") && cmd.length === 4) {
+      const pid = parseInt(cmd.slice(2), 16);
+      if (pid === 0 || pid === 0x20 || pid === 0x40) return "41" + hex2(pid) + toHex(this.bitmask(pid));
+      if (pid === 1) {
+        const n = c.stored.length;
+        const C = 0xE5, D = this.cleared ? 0xE5 : 0x04;
+        return "4101" + toHex([(n ? 0x80 : 0) | n, 0x07, C, D]);
+      }
+      const p = BY_PID[pid];
+      if (!p || !this.sup.has(pid)) return "NO DATA";
+      return "41" + hex2(pid) + toHex(p.enc(this.vals()[p.key]));
+    }
+    return "?";
+  }
+};
+function demoTransport() {
+  demo.t0 = performance.now(); demo.cleared = false;
+  const t = { name: "Demo van", onData: null, onClose: null };
+  t.write = s => { setTimeout(() => t.onData && t.onData(demo.emulate(s.trim()) + "\r\r>"), 18 + Math.random() * 20); };
+  t.close = () => {};
+  return t;
+}
+
+/* ---------- real transports ---------- */
+const BLE_SVCS = [0xFFE0, 0xFFF0, 0x18F0, "e7810a71-73ae-499d-8c15-faa9aef0c3f2"];
+async function bleTransport() {
+  const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SVCS });
+  const server = await dev.gatt.connect();
+  let rx = null, tx = null;
+  for (const s of BLE_SVCS) {
+    let svc; try { svc = await server.getPrimaryService(s); } catch { continue; }
+    const chars = await svc.getCharacteristics();
+    rx = chars.find(c => c.properties.notify || c.properties.indicate) || null;
+    tx = chars.find(c => c.properties.write || c.properties.writeWithoutResponse) || null;
+    if (rx && tx) break;
+  }
+  if (!rx || !tx) { dev.gatt.disconnect(); throw new Error("This Bluetooth device doesn't look like an OBD adapter. Pick the adapter (often named OBDII, IOS-Vlink, vLinker or OBDLink)."); }
+  const t = { name: dev.name || "Bluetooth adapter", onData: null, onClose: null };
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  await rx.startNotifications();
+  rx.addEventListener("characteristicvaluechanged", e => t.onData && t.onData(dec.decode(e.target.value)));
+  dev.addEventListener("gattserverdisconnected", () => t.onClose && t.onClose());
+  t.write = async s => {
+    const b = enc.encode(s);
+    for (let i = 0; i < b.length; i += 20) {
+      const chunk = b.slice(i, i + 20);
+      if (tx.properties.writeWithoutResponse) await tx.writeValueWithoutResponse(chunk); else await tx.writeValue(chunk);
+    }
+  };
+  t.close = () => { try { dev.gatt.disconnect(); } catch {} };
+  return t;
+}
+async function serialTransport(baud) {
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: baud });
+  const writer = port.writable.getWriter(), reader = port.readable.getReader();
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  const t = { name: "USB adapter", onData: null, onClose: null };
+  (async () => {
+    try { for (;;) { const { value, done } = await reader.read(); if (done) break; t.onData && t.onData(dec.decode(value)); } } catch {}
+    t.onClose && t.onClose();
+  })();
+  t.write = s => writer.write(enc.encode(s));
+  t.close = async () => { try { await reader.cancel(); } catch {} try { writer.releaseLock(); } catch {} try { await port.close(); } catch {} };
+  return t;
+}
+
+/* ---------- connection flow ---------- */
+const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
+let connectMsg = "", connectBusy = false;
+
+async function connect(kind) {
+  if (connectBusy) return;
+  connectBusy = true; connectMsg = ""; renderConnect("Opening adapter…");
+  let t;
+  try {
+    if (kind === "demo") { t = demoTransport(); demoDrives = seedDemoDrives(); }
+    else if (kind === "ble") {
+      if (!navigator.bluetooth) throw new Error("NOAPI_BLE");
+      t = await bleTransport();
+    } else {
+      if (!navigator.serial) throw new Error("NOAPI_USB");
+      t = await serialTransport(Number($("#baud") ? $("#baud").value : 38400));
+    }
+  } catch (e) {
+    connectBusy = false; connectMsg = friendlyError(e, kind); renderConnect(); return;
+  }
+  state.mode = kind; state.conn = t; state.elm = new Elm(t);
+  t.onClose = () => disconnect("The adapter disconnected.");
+  try {
+    renderConnect("Resetting adapter…");
+    const ver = await state.elm.send("ATZ", 5000); state.elmVer = (ver.match(/ELM327\s*v?[\d.]+/i) || ["ELM327"])[0];
+    await sleep(kind === "demo" ? 50 : 400);
+    for (const c of ["ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0"]) await state.elm.send(c, 2000);
+    renderConnect("Finding the van's protocol… (ignition must be on)");
+    await state.elm.send("0100", 12000).then(parseMsgs);
+    const dpn = (await state.elm.send("ATDPN")).replace(/[^0-9A-C]/gi, "").slice(-1).toUpperCase();
+    state.isCan = ["6", "7", "8", "9", "A", "B", "C"].includes(dpn);
+    state.protocol = (await state.elm.send("ATDP")).replace(/[\r\n>]/g, " ").trim();
+    renderConnect("Checking which readings the van supports…");
+    await readSupported();
+    try { await readVin(); } catch {}
+    try { await readMonitors(); } catch {}
+    connectBusy = false;
+    onConnected();
+    readCodes().then(() => readMode06());
+    pollLoop();
+  } catch (e) {
+    connectBusy = false;
+    const msg = /UNABLE TO CONNECT/.test(e.message) ? "The adapter is working but the van didn't answer. Turn the ignition to ON (or start the engine) and try again." : "The adapter didn't respond as expected: " + e.message + ". Unplug it for a few seconds and try again.";
+    try { t.close(); } catch {}
+    state.conn = null; state.elm = null; connectMsg = msg; renderConnect();
+  }
+}
+function friendlyError(e, kind) {
+  const m = String(e && (e.message || e.name) || e);
+  if (e && e.name === "NotFoundError") return "No adapter was picked. Make sure the adapter is plugged in and its light is on, then try again.";
+  if (m === "NOAPI_BLE") return "This browser can't use Bluetooth. Use Chrome on Android, Chrome or Edge on a laptop, or Bluefy on iPhone.";
+  if (m === "NOAPI_USB") return "This browser can't use USB serial. Use Chrome or Edge on a laptop.";
+  if (e && (e.name === "SecurityError" || /permission|policy|disallowed/i.test(m))) return inFrame
+    ? "Bluetooth and USB are blocked while this page is shown inside Claude. Use the saved file instead: open it in Chrome on your laptop, or from an https web address on your phone. The demo works here."
+    : "The browser blocked access to the adapter. The page needs to be opened from an https address or as a local file in Chrome.";
+  return m;
+}
+function onConnected() {
+  $("#connPill").className = "pill " + (state.mode === "demo" ? "demo" : "on");
+  $("#connText").textContent = state.mode === "demo" ? "Demo van" : "Connected · " + state.conn.name;
+  $("#discBtn").hidden = false;
+  $("#connectBox").hidden = true; $("#liveBox").hidden = false;
+  buildTiles(); renderVehicle(); renderMonitors();
+}
+async function disconnect(msg) {
+  state.polling = false;
+  try { endDrive(); } catch {}
+  const t = state.conn, elm = state.elm;
+  // Ask the adapter to drop into low-power mode before letting go (ignored by adapters that don't support it).
+  if (elm && state.mode !== "demo") { try { await Promise.race([elm.send("ATLP", 800), sleep(900)]); } catch {} }
+  state.conn = null; state.elm = null; state.drive = null;
+  if (t) { t.onClose = null; try { await t.close(); } catch {} }
+  $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
+  $("#connectBox").hidden = false; $("#liveBox").hidden = true;
+  connectMsg = msg || ""; renderConnect(); renderVehicle();
+}
+
+async function readSupported() {
+  state.supported = new Set();
+  for (const base of [0x00, 0x20, 0x40]) {
+    if (base && !state.supported.has(base)) break;
+    let msgs; try { msgs = parseMsgs(await state.elm.send("01" + hex2(base), 4000)); } catch { break; }
+    const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === base);
+    if (!m) break;
+    const d = m.bytes.slice(2, 6);
+    for (let i = 0; i < 32; i++) if (d[i >> 3] & (0x80 >> (i & 7))) state.supported.add(base + i + 1);
+  }
+  for (const p of PARAMS) if (p.alt && !state.supported.has(p.pid) && state.supported.has(p.alt)) p.pid = p.alt;
+}
+async function readVin() {
+  const msgs = parseMsgs(await state.elm.send("0902", 5000));
+  const all = msgs.flatMap(m => m.bytes);
+  const i = all.findIndex((b, k) => b === 0x49 && all[k + 1] === 0x02);
+  if (i < 0) return;
+  const s = all.slice(i + 3).filter(b => b >= 0x30 && b <= 0x5A).map(b => String.fromCharCode(b)).join("");
+  state.vin = s.slice(-17);
+}
+const MON_C = ["Misfire", "Fuel system", "Components"];
+const MON_N = ["Catalyst", "Heated catalyst", "EVAP system", "Secondary air", "A/C refrigerant", "Oxygen sensor", "Oxygen sensor heater", "EGR / valve timing"];
+async function readMonitors() {
+  const msgs = parseMsgs(await state.elm.send("0101", 3000));
+  const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === 0x01);
+  if (!m) return;
+  const [A, B, C, D] = m.bytes.slice(2, 6);
+  state.mil = !!(A & 0x80);
+  const list = [];
+  MON_C.forEach((n, i) => list.push({ n, avail: !!(B & (1 << i)), done: !(B & (1 << (i + 4))) }));
+  MON_N.forEach((n, i) => list.push({ n, avail: !!(C & (1 << i)), done: !(D & (1 << i)) }));
+  state.monitors = list;
+  renderMonitors(); renderStrip();
+}
+async function readCodes() {
+  if (!state.elm) { renderCodes("Connect to the van first."); return; }
+  $("#readBtn").disabled = true; renderCodes("Reading codes…");
+  const res = { stored: [], pending: [], permanent: [] };
+  for (const [cmd, key, sid] of [["03", "stored", 0x43], ["07", "pending", 0x47], ["0A", "permanent", 0x4A]]) {
+    try {
+      const msgs = parseMsgs(await state.elm.send(cmd, 6000));
+      for (const m of msgs) if (m.bytes[0] === sid) res[key].push(...decodeDtcs(m.bytes, state.isCan));
+    } catch {}
+    res[key] = [...new Set(res[key])];
+  }
+  state.codes = res; state.codesAt = new Date();
+  $("#readBtn").disabled = false;
+  try { await readMonitors(); } catch {}
+  renderCodes(); updateBadges();
+}
+async function clearCodes() {
+  if (!state.elm) return;
+  try { await state.elm.send("04", 6000); } catch {}
+  $("#clearConfirm").hidden = true;
+  await readCodes();
+}
+
+/* ---------- polling ---------- */
+function pushVal(key, v) {
+  V[key] = v;
+  (H[key] = H[key] || []).push(v);
+  const l = tileLevel(key);
+  (HL[key] = HL[key] || []).push(l === "crit" ? 2 : l === "warn" ? 1 : 0);
+  if (H[key].length > 90) { H[key].shift(); HL[key].shift(); }
+}
+async function readParam(p) {
+  const msgs = parseMsgs(await state.elm.send("01" + hex2(p.pid), 2500));
+  const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === p.pid);
+  if (m && m.bytes.length >= 2 + p.n) pushVal(p.key, p.f(m.bytes.slice(2)));
+}
+async function readBatt() {
+  const r = await state.elm.send("ATRV", 2000);
+  const v = parseFloat((r.match(/(\d+(\.\d+)?)\s*V/i) || [])[1]);
+  if (!isNaN(v)) pushVal("batt", v);
+}
+async function pollLoop() {
+  state.polling = true;
+  const live = PARAMS.filter(p => p.pid != null && state.supported.has(p.pid));
+  const fast = live.filter(p => p.fast), slow = live.filter(p => !p.fast);
+  let cycle = 0, si = 0, fails = 0;
+  try { await readBatt(); } catch {}
+  while (state.polling && state.elm) {
+    try {
+      for (const p of fast) { if (!state.polling) return; await readParam(p); }
+      for (let k = 0; k < 3 && slow.length; k++) await readParam(slow[si++ % slow.length]);
+      if (cycle % 6 === 0 || !(V.rpm > 400)) await readBatt();
+      if (state.m06 && Date.now() - state.m06.at > 600000) await readMode06();
+      if (cycle % 120 === 119) await readMonitors();
+      fails = 0;
+    } catch (e) {
+      if (++fails > 6) { disconnect("Lost contact with the adapter. Check it's still plugged in, then reconnect."); return; }
+    }
+    cycle++;
+    afterSample();
+    await sleep(state.mode === "demo" ? 220 : 30);
+  }
+}
+
+/* ---------- rules ---------- */
+function evalRules() {
+  const out = [], push = (id, level, title, detail, guide, keys) => out.push({ id, level, title, detail, guide, keys });
+  const run = V.rpm > 400, idle = run && (V.speed ?? 0) < 2 && (V.tps == null || V.tps < 22), warm = V.ect != null && V.ect >= 77;
+  if (V.ect != null) {
+    if (V.ect <= -39) push("ect_open", "warn", "Coolant sensor reading −40°", "That reading usually means an open circuit, not a real temperature.", "P0118", ["ect"]);
+    else if (V.ect >= 116) push("ect_hot", "crit", "Engine is overheating", `Coolant is at ${fmt("ect")}. Pull over safely and turn the engine off.`, "OVERHEAT", ["ect"]);
+    else if (V.ect >= 110) push("ect_hot", "warn", "Coolant running hot", `Coolant is at ${fmt("ect")}, above the normal range of ${normalText(P.ect)}.`, "OVERHEAT", ["ect"]);
+    if (run && V.runtime > 900 && V.ect < 71 && V.ect > -39) push("ect_low", "warn", "Engine isn't reaching operating temperature", `Coolant is ${fmt("ect")} after ${num(P.runtime, V.runtime)} of running. A thermostat stuck open is the usual cause.`, "P0128", ["ect", "iat", "amb"]);
+  }
+  if (V.iat != null && V.iat <= -39) push("iat_open", "warn", "Intake air sensor reading −40°", "That reading usually means the sensor circuit is open.", "P0113", ["iat"]);
+  if (run && warm) for (const b of [1, 2]) {
+    const l = V["ltft" + b], s = V["stft" + b];
+    if (l != null && Math.abs(l) >= 10) {
+      const lean = l > 0;
+      push("ltft" + b, Math.abs(l) >= 20 ? "crit" : "warn", `Bank ${b} running ${lean ? "lean" : "rich"}`,
+        `Long-term fuel trim is ${fmt("ltft" + b)}. The computer is ${lean ? "adding" : "removing"} fuel to compensate. Normal is within ±10%.`,
+        lean ? (b === 1 ? "P0171" : "P0174") : (b === 1 ? "P0172" : "P0175"), ["ltft" + b, "stft" + b]);
+    }
+    if (s != null && Math.abs(s) >= 20) push("stft" + b, "warn", `Bank ${b} short-term trim at its limit`, `Short-term fuel trim is ${fmt("stft" + b)}.`, s > 0 ? (b === 1 ? "P0171" : "P0174") : (b === 1 ? "P0172" : "P0175"), ["stft" + b]);
+  }
+  if (idle && warm && V.rpm != null && (V.rpm < 550 || V.rpm > 950)) push("idle", "warn", V.rpm < 550 ? "Idle speed low" : "Idle speed high", `Warm idle is ${fmt("rpm")}. Normal is ${normalText(P.rpm)}.`, V.rpm < 550 ? "P0506" : "P0507", ["rpm"]);
+  if (idle && warm && V.maf != null && (V.maf < 2 || V.maf > 7)) push("maf", "warn", "Airflow at idle out of range", `Mass airflow is ${fmt("maf")} at warm idle. About 3–5 g/s is typical.`, "P0101", ["maf"]);
+  const volts = V.batt ?? V.ecuv, vk = V.batt != null ? "batt" : "ecuv";
+  if (volts != null) {
+    if (run) {
+      if (volts < 12.0) push("volt", "crit", "Charging voltage low", `${fmt(vk)} with the engine running. The alternator may not be charging.`, "P0562", [vk]);
+      else if (volts < 12.4) push("volt", "warn", "Charging voltage on the low side", `${fmt(vk)} with the engine running.`, "P0562", [vk]);
+      if (volts > 15.2) push("volth", "crit", "Charging voltage too high", `${fmt(vk)}. Overcharging can damage the battery.`, "P0563", [vk]);
+      else if (volts > 14.9) push("volth", "warn", "Charging voltage high", `${fmt(vk)} with the engine running.`, "P0563", [vk]);
+    } else if (V.rpm != null || state.mode) {
+      if (volts < 11.8) push("batt", "crit", "Battery voltage very low", `${fmt(vk)} with the engine off.`, "BATT", [vk]);
+      else if (volts < 12.2) push("batt", "warn", "Battery voltage low", `${fmt(vk)} with the engine off.`, "BATT", [vk]);
+    }
+  }
+  for (const k of ["cat1", "cat2"]) if (V[k] != null) {
+    if (V[k] > 900) push(k, "crit", `Catalytic converter very hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
+    else if (V[k] > 820) push(k, "warn", `Catalytic converter running hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
+  }
+  if (V.oil != null && V.oil > 130) push("oil", "warn", "Oil temperature high", `Oil is at ${fmt("oil")}.`, "OVERHEAT", ["oil"]);
+  if (V.fuel != null && V.fuel < 10) push("fuel", "warn", "Fuel level low", `${fmt("fuel")} in the tank.`, "FUEL", ["fuel"]);
+  return out;
+}
+function afterSample() {
+  try { trackDrive(); } catch {}
+  const raw = evalRules(), ids = new Set(raw.map(f => f.id));
+  for (const id in state.counters) if (!ids.has(id)) state.counters[id] = 0;
+  const active = [];
+  for (const f of raw) {
+    state.counters[f.id] = (state.counters[f.id] || 0) + 1;
+    if (state.counters[f.id] >= 4) {
+      active.push(f);
+      const s = state.seen[f.id] || (state.seen[f.id] = { first: new Date() });
+      Object.assign(s, f, { last: new Date() });
+    }
+  }
+  state.findings = active;
+  if (state.recording) {
+    state.rows.push([new Date().toISOString(), ...LOG_KEYS.map(k => V[k] == null ? "" : +conv(P[k], V[k]).toFixed(2))]);
+    if (state.rows.length > 20000) state.rows.shift();
+  }
+  scheduleRender();
+}
+
+/* ---------- rendering ---------- */
+let raf = 0;
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (sheetRefresh) sheetRefresh(); }); }
+
+function renderConnect(busy) {
+  const box = $("#connectBox");
+  const frameNote = inFrame ? `<div class="notice warn"><b>You're viewing this inside Claude.</b> The demo works here, but browsers block Bluetooth and USB inside embedded pages. To connect your adapter, open the saved HTML file in Chrome on your laptop, or host it at an https address for your phone.</div>` : "";
+  box.innerHTML = `<div class="connect">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <h2>Connect to the van</h2>
+      <p class="muted" style="max-width:56ch">Plug an ELM327-compatible adapter into the OBD-II port under the dash, left of the steering column. Turn the ignition on, or start the engine for live readings.</p>
+      ${frameNote}
+      ${busy ? `<div class="notice" role="status">${esc(busy)}</div>` : ""}
+      ${connectMsg ? `<div class="notice warn" role="alert">${esc(connectMsg)}</div>` : ""}
+      <div class="choices">
+        <button class="choice" data-c="ble" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg></span><div><b>Bluetooth LE adapter</b><span>Phone or laptop. Vgate iCar Pro BLE, OBDLink CX, vLinker and similar.</span></div></button>
+        <button class="choice" data-c="usb" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14M8 7l4-4 4 4M7 12v2h5M17 10v3h-5"/><circle cx="12" cy="19" r="2"/></svg></span><div><b>USB adapter</b><span>Laptop with Chrome or Edge. <label style="white-space:nowrap">Speed <select id="baud" onclick="event.stopPropagation()"><option>38400</option><option>115200</option><option>9600</option></select></label></span></div></button>
+        <button class="choice" data-c="demo" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5v14l11-7z"/></svg></span><div><b>Try the demo van</b><span>A simulated Odyssey with a lean bank 2 and an EVAP code, so you can explore every screen.</span></div></button>
+      </div>
+    </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <span class="label">What gets checked</span>
+      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:.92rem">
+        <li>${PARAMS.filter(p => p.group !== "hidden").length} live engine readings with normal ranges for this V6</li>
+        <li>Stored, pending and permanent trouble codes, with step-by-step checks</li>
+        <li>Out-of-range warnings, such as fuel trims, charging voltage, idle and coolant warm-up</li>
+        <li>Readiness monitors, VIN and a recordable session log</li>
+      </ul>
+      <span class="label" style="margin-top:6px">Adapter commands used</span>
+      <div class="port">ATZ  ATE0  ATSP0     reset, auto protocol
+0100 0120 0140    supported readings
+01xx              live data
+03 / 07 / 0A      stored / pending / permanent
+04                clear codes
+0902  ATRV        VIN, battery voltage</div>
+    </div>
+  </div>`;
+  box.querySelectorAll("[data-c]").forEach(b => b.onclick = () => connect(b.dataset.c));
+}
+
+function engineState() {
+  if (V.rpm == null || V.rpm < 300) return "Engine off";
+  if (V.ect != null && V.ect < 77) return "Warming up";
+  return (V.speed ?? 0) < 2 ? "Warm idle" : "Driving";
+}
+const ICO_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const ICO_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>';
+function renderStrip() {
+  const hs = healthSummary();
+  const f = state.findings, crit = f.filter(x => x.level === "crit").length;
+  const codes = state.codes ? state.codes.stored.length + state.codes.pending.length : null;
+  const lvl = crit ? "crit" : f.length ? "warn" : "";
+  const head = crit ? `${crit} critical reading${crit > 1 ? "s" : ""}` : f.length ? `${f.length} reading${f.length > 1 ? "s" : ""} need${f.length > 1 ? "" : "s"} attention` : "All readings normal";
+  const sub = `${engineState()} · running ${V.runtime != null ? num(P.runtime, V.runtime) : "—"}${f.length ? " · " + esc(f.map(x => x.title).slice(0, 2).join(", ")) : ""}`;
+  $("#strip").innerHTML = `
+    <div class="hero ${lvl}"><span class="hero-ico">${lvl ? ICO_WARN : ICO_OK}</span><div class="t"><h3>${head}</h3><p>${sub}</p></div>${f.length ? '<button class="btn small" data-go="checks">Review</button>' : ""}</div>
+    <div class="cells">
+      <div class="cell"><span class="label">Check engine</span><span class="v" style="${state.mil ? "color:var(--warn)" : ""}">${state.mil == null ? "—" : state.mil ? "On" : "Off"}</span><span class="s">Warning light</span></div>
+      <button class="cell" data-go="codes"><span class="label">Codes</span><span class="v">${codes == null ? "—" : codes}</span><span class="s">${codes ? "View details ›" : "Stored + pending"}</span></button>
+      <button class="cell" data-go="health"><span class="label">Health</span><span class="v" style="${hs.lvl ? "color:var(--" + hs.lvl + ")" : ""}">${hs.label}</span><span class="s">${hs.sub} ›</span></button>
+      <div class="cell"><span class="label">Battery</span><span class="v">${V.batt != null ? num(P.batt, V.batt) : "—"}<small style="font-size:.8rem;color:var(--muted);font-weight:400"> V</small></span><span class="s">${engineState() === "Engine off" ? "Resting" : "Charging"}</span></div>
+    </div>`;
+  $("#strip").querySelectorAll("[data-go]").forEach(b => b.onclick = () => show(b.dataset.go));
+}
+function tileLevel(key) {
+  let l = "";
+  for (const f of state.findings) if (f.keys.includes(key)) { if (f.level === "crit") return "crit"; l = "warn"; }
+  return l;
+}
+function sparkSvg(key, w = 100, h = 30) {
+  const arr = H[key], lv = HL[key] || [], p = P[key];
+  if (!arr || arr.length < 2) return "";
+  let lo = Math.min(...arr), hi = Math.max(...arr);
+  if (p.normal) { lo = Math.min(lo, p.normal[0]); hi = Math.max(hi, p.normal[1]); }
+  if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const y = v => h - ((v - lo) / (hi - lo)) * h;
+  const pts = arr.map((v, i) => [(i / (arr.length - 1)) * w, y(v)]);
+  const P2 = q => q[0].toFixed(1) + "," + q[1].toFixed(1);
+  const line = pts.map(P2).join(" ");
+  let out = "";
+  if (p.normal) { const y1 = y(p.normal[1]), y0 = y(p.normal[0]); out += `<rect class="bandr" x="0" y="${y1.toFixed(1)}" width="${w}" height="${(y0 - y1).toFixed(1)}"/>`; }
+  out += `<polygon class="area" points="0,${h} ${line} ${w},${h}"/><polyline class="line" points="${line}"/>`;
+  for (let i = 1; i < pts.length; i++) {
+    const l = Math.max(lv[i] || 0, lv[i - 1] || 0);
+    if (l) out += `<line class="seg-${l === 2 ? "crit" : "warn"}" x1="${pts[i - 1][0].toFixed(1)}" y1="${pts[i - 1][1].toFixed(1)}" x2="${pts[i][0].toFixed(1)}" y2="${pts[i][1].toFixed(1)}"/>`;
+  }
+  const e = pts[pts.length - 1], el = lv[lv.length - 1] || 0;
+  out += `<line class="dot${el === 2 ? " crit" : el === 1 ? " warn" : ""}" x1="${e[0].toFixed(1)}" y1="${e[1].toFixed(1)}" x2="${e[0].toFixed(1)}" y2="${e[1].toFixed(1)}"/>`;
+  return out;
+}
+const pct = (p, v) => Math.max(0, Math.min(100, ((v - p.g[0]) / (p.g[1] - p.g[0])) * 100));
+function buildTiles() {
+  const live = PARAMS.filter(p => p.group !== "hidden" && (p.special || state.supported.has(p.pid)));
+  $("#groups").innerHTML = GROUPS.map(g => {
+    const ps = live.filter(p => p.group === g);
+    if (!ps.length) return "";
+    return `<div class="group"><span class="label">${g}</span><div class="tiles">${ps.map(p => `
+      <button class="tile" id="t-${p.key}" data-k="${p.key}">
+        <span class="hd"><span class="name">${esc(p.name)}</span><span class="st none">—</span></span>
+        <span class="val"><b>—</b><small>${esc(unitOf(p))}</small></span>
+        ${p.g ? `<span class="range">${p.normal ? `<span class="band" style="left:${pct(p, p.normal[0])}%;right:${100 - pct(p, p.normal[1])}%"></span>` : ""}<span class="mark" style="left:0%" hidden></span></span>` : ""}
+        <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </button>`).join("")}</div></div>`;
+  }).join("");
+  const unsupported = PARAMS.filter(p => p.pid != null && p.group !== "hidden" && !state.supported.has(p.pid));
+  if (unsupported.length) $("#groups").insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:.85rem">Not reported by this van over standard OBD-II: ${unsupported.map(p => esc(p.name.toLowerCase())).join(", ")}.</p>`);
+  $("#groups").querySelectorAll(".tile").forEach(t => t.onclick = () => openParam(t.dataset.k));
+}
+function renderLive() {
+  if ($("#liveBox").hidden) return;
+  renderStrip();
+  for (const p of PARAMS) {
+    const el = document.getElementById("t-" + p.key); if (!el) continue;
+    const v = V[p.key];
+    el.querySelector(".val b").textContent = num(p, v);
+    const lv = tileLevel(p.key);
+    el.className = "tile" + (lv ? " " + lv : "");
+    const mk = el.querySelector(".mark");
+    if (mk && v != null) { mk.hidden = false; mk.style.left = pct(p, v) + "%"; }
+    el.querySelector("svg.spark").innerHTML = sparkSvg(p.key);
+    const st = el.querySelector(".st");
+    if (lv) { st.className = "st"; st.textContent = lv === "crit" ? "Critical" : "Check"; }
+    else if (v != null && p.normal) { st.className = "st"; st.textContent = "Normal"; }
+    else { st.className = "st none"; st.textContent = v == null ? "—" : "Live"; }
+  }
+}
+function updateBadges() {
+  const n = state.codes ? state.codes.stored.length + state.codes.pending.length : 0;
+  $("#codeBadge").hidden = !n; $("#codeBadge").textContent = n;
+  const f = state.findings.length;
+  $("#checkBadge").hidden = !f; $("#checkBadge").textContent = f;
+}
+function codeItem(code, kind) {
+  const g = guideFor(code);
+  return `<div class="item"><span class="code">${esc(code)}</span><div class="body"><b>${esc(g.t)}</b><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span><span class="muted" style="font-size:.82rem">${kind}</span></div></div><button class="btn small" data-g="${esc(code)}">Troubleshoot</button></div>`;
+}
+function renderCodes(msg) {
+  const out = $("#codesOut");
+  if (msg) { out.innerHTML = `<div class="empty" role="status">${esc(msg)}</div>`; return; }
+  const c = state.codes; if (!c) return;
+  const sec = (title, list, kind, note) => `<div class="group"><span class="label">${title} · ${list.length}</span>${note ? `<p class="muted" style="font-size:.86rem">${note}</p>` : ""}${list.length ? `<div class="list">${list.map(x => codeItem(x, kind)).join("")}</div>` : `<div class="empty" style="padding:12px">None</div>`}</div>`;
+  out.innerHTML = `<div style="display:flex;flex-direction:column;gap:18px">
+    <p class="muted" style="font-size:.86rem">Read at ${state.codesAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${state.mode === "demo" ? " from the demo van" : ""}. Covers the engine computer and the transmission's emissions codes.</p>
+    ${sec("Stored", c.stored, "Stored: check-engine light on", "")}
+    ${sec("Pending", c.pending, "Pending: seen once, not yet confirmed", "A pending code was detected on one drive. If it happens again on the next drive it becomes stored and turns on the light.")}
+    ${sec("Permanent", c.permanent, "Permanent: clears itself after a passed self-test", "Permanent codes can't be erased with Clear codes. The engine computer removes them after it re-runs the self-test and the problem is gone.")}
+  </div>`;
+  out.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openGuide(b.dataset.g));
+}
+function renderChecks() {
+  const out = $("#checksOut");
+  if (!state.elm) { out.innerHTML = `<div class="empty">Connect to the van to start checking live readings.</div>`; return; }
+  const act = state.findings, actIds = new Set(act.map(f => f.id));
+  const past = Object.entries(state.seen).filter(([id]) => !actIds.has(id)).map(([, s]) => s);
+  const item = (f, isPast) => `<div class="item"><span class="chip ${isPast ? "na" : f.level}">${isPast ? "Cleared" : f.level === "crit" ? "Critical" : "Warning"}</span><div class="body"><b>${esc(f.title)}</b><p class="muted" style="font-size:.9rem">${esc(f.detail)}</p>${isPast ? `<span class="muted" style="font-size:.8rem">Last seen ${f.last.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</span>` : ""}</div><button class="btn small" data-g="${esc(f.guide)}">Troubleshoot</button></div>`;
+  out.innerHTML = `<div style="display:flex;flex-direction:column;gap:18px">
+    <div class="group"><span class="label">Now · ${act.length}</span>${act.length ? `<div class="list">${act.map(f => item(f)).join("")}</div>` : `<div class="empty">Everything being checked is in range. State: ${esc(engineState().toLowerCase())}. Some checks only run at warm idle or with the engine running.</div>`}</div>
+    ${past.length ? `<div class="group"><span class="label">Earlier this session · ${past.length}</span><div class="list">${past.map(f => item(f, true)).join("")}</div></div>` : ""}
+  </div>`;
+  out.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openGuide(b.dataset.g));
+}
+function renderVehicle() {
+  const rows = [
+    ["Connection", state.elm ? (state.mode === "demo" ? "Demo van (simulated)" : state.conn.name) : "Not connected"],
+    ["VIN", state.vin ? `<span class="mono">${esc(state.vin)}</span>` : "—"],
+    ["Protocol", state.protocol ? esc(state.protocol) : "—"],
+    ["Adapter", state.elmVer ? esc(state.elmVer) : "—"],
+    ["Battery", V.batt != null ? fmt("batt") : "—"],
+    ["Readings supported", state.elm ? PARAMS.filter(p => p.pid != null && state.supported.has(p.pid)).length + " of " + PARAMS.filter(p => p.pid != null).length : "—"]
+  ];
+  $("#vehKv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  $("#uUS").setAttribute("aria-pressed", units === "us"); $("#uMet").setAttribute("aria-pressed", units !== "us");
+}
+function renderMonitors() {
+  const m = state.monitors;
+  if (!m) { $("#monOut").innerHTML = `<div class="empty" style="grid-column:1/-1">${state.elm ? "No monitor data yet." : "Connect to see monitor status."}</div>`; return; }
+  const avail = m.filter(x => x.avail);
+  $("#monOut").innerHTML = avail.map(x => `<div class="mon"><span>${x.n}</span><span class="chip ${x.done ? "ok" : "warn"}">${x.done ? "Ready" : "Not ready"}</span></div>`).join("");
+}
+function renderLogInfo() {
+  $("#recInfo").textContent = state.rows.length.toLocaleString() + " rows" + (state.recording ? " · recording" : "");
+  $("#recBtn").textContent = state.recording ? "Stop recording" : "Start recording";
+}
+const trafficLines = [];
+function traffic(cmd, resp) {
+  trafficLines.push("> " + cmd + "\n" + resp.replace(/[\r\n]+/g, " ").trim());
+  if (trafficLines.length > 40) trafficLines.shift();
+  if (current === "log") $("#traffic").textContent = trafficLines.slice(-20).join("\n");
+}
+
+/* ---------- sheets ---------- */
+let sheetRefresh = null, lastFocus = null;
+function openSheet(html, refresh) {
+  lastFocus = document.activeElement;
+  $("#sheetRoot").innerHTML = `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  $("#scrim").onclick = e => { if (e.target.id === "scrim") closeSheet(); };
+  $("#sheetRoot .close").onclick = closeSheet;
+  sheetRefresh = refresh || null;
+  $("#sheetRoot .close").focus();
+}
+function closeSheet() { $("#sheetRoot").innerHTML = ""; sheetRefresh = null; if (lastFocus) try { lastFocus.focus(); } catch {} }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#scrim")) closeSheet(); });
+
+function watchHtml(keys) {
+  return keys.filter(k => P[k]).map(k => `<div>${esc(P[k].name)}: <b>${V[k] != null ? fmt(k) : "—"}</b></div>`).join("");
+}
+function openGuide(code) {
+  const g = guideFor(code);
+  const done = store.get("chk:" + code, []);
+  const isCode = /^[PCBU][0-9A-F]{4}$/.test(code);
+  const html = `
+    <header><div class="t">${isCode ? `<span class="code" style="align-self:flex-start">${esc(code)}</span>` : ""}<h2>${esc(g.t)}</h2><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span>${g.generic ? '<span class="chip low">General guidance</span>' : ""}</div></div><button class="close" aria-label="Close">×</button></header>
+    <div class="block prose"><p>${esc(g.what)}</p></div>
+    <div class="group"><span class="label">Common causes</span><div class="block"><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:.93rem">${g.causes.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div></div>
+    <div class="group"><div class="row" style="justify-content:space-between"><span class="label">Steps, simplest first</span><button class="link" id="resetSteps" style="font-size:.85rem">Reset</button></div>
+      <ol class="steps">${g.steps.map((s, i) => `<li class="${done.includes(i) ? "done" : ""}"><label><input type="checkbox" data-i="${i}" ${done.includes(i) ? "checked" : ""}><span class="n">${i + 1}</span><span class="txt">${esc(s)}</span></label></li>`).join("")}</ol></div>
+    ${g.watch && g.watch.length ? `<div class="group"><span class="label">Watch these live readings</span><div class="watch" id="watchBox">${watchHtml(g.watch)}</div>${state.elm ? "" : '<p class="muted" style="font-size:.85rem">Connect to see them update.</p>'}</div>` : ""}
+    <div class="group"><label class="label" for="noteBox">Your notes from the service manual</label><textarea id="noteBox" placeholder="Specs, connector numbers, test results…">${esc(store.get("note:" + code, ""))}</textarea></div>
+    <p class="muted" style="font-size:.84rem">General diagnostic guidance for this engine, not Honda's official procedure. For exact specifications and pinpoint tests, see <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>.</p>`;
+  openSheet(html, () => { const w = $("#watchBox"); if (w) w.innerHTML = watchHtml(g.watch); });
+  $("#sheetRoot").querySelectorAll(".steps input").forEach(cb => cb.onchange = () => {
+    const i = +cb.dataset.i, cur = new Set(store.get("chk:" + code, []));
+    cb.checked ? cur.add(i) : cur.delete(i);
+    store.set("chk:" + code, [...cur]); cb.closest("li").classList.toggle("done", cb.checked);
+  });
+  $("#resetSteps").onclick = () => { store.set("chk:" + code, []); $("#sheetRoot").querySelectorAll(".steps input").forEach(cb => { cb.checked = false; cb.closest("li").classList.remove("done"); }); };
+  $("#noteBox").oninput = e => store.set("note:" + code, e.target.value);
+}
+function openParam(key) {
+  const p = P[key];
+  const body = () => {
+    const fs = state.findings.filter(f => f.keys.includes(key));
+    return `<div class="row" style="align-items:baseline;gap:8px"><span style="font-family:var(--f-display);font-size:2.6rem;font-weight:600;font-variant-numeric:tabular-nums">${num(p, V[key])}</span><span class="muted">${esc(unitOf(p))}</span></div>
+      <div class="block"><svg class="bigspark spark" viewBox="0 0 300 120" preserveAspectRatio="none" aria-label="Last ${(H[key] || []).length} readings">${sparkSvg(key, 300, 120)}</svg>
+      <div class="legend">${p.normal ? '<span><i style="background:var(--band)"></i>Normal range</span>' : ""}<span><i style="background:var(--spark)"></i>Reading</span><span><i style="background:var(--warn)"></i>Flagged</span><span><i style="background:var(--crit)"></i>Critical</span></div></div>
+      ${p.normal ? `<p style="font-size:.92rem"><span class="muted">Normal:</span> ${esc(normalText(p))}</p>` : ""}
+      ${fs.map(f => `<div class="item"><span class="chip ${f.level}">${f.level === "crit" ? "Critical" : "Warning"}</span><div class="body"><b>${esc(f.title)}</b><p class="muted" style="font-size:.9rem">${esc(f.detail)}</p></div><button class="btn small" data-g="${esc(f.guide)}">Troubleshoot</button></div>`).join("")}`;
+  };
+  openSheet(`<header><div class="t"><span class="label">${esc(p.group)}</span><h2>${esc(p.name)}</h2></div><button class="close" aria-label="Close">×</button></header>
+    <div id="pBody" style="display:flex;flex-direction:column;gap:12px">${body()}</div>
+    <div class="block prose"><p>${esc(p.desc)}</p></div>`, () => { const b = $("#pBody"); if (b) { b.innerHTML = body(); bindG(b); } });
+  bindG($("#pBody"));
+  function bindG(root) { root.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openGuide(b.dataset.g)); }
+}
+
+/* ---------- log ---------- */
+const LOG_KEYS = PARAMS.filter(p => p.group !== "hidden" || p.key === "runtime").map(p => p.key);
+function csv() {
+  const head = ["time", ...LOG_KEYS.map(k => `${k} (${unitOf(P[k]) || "-"})`)];
+  return [head, ...state.rows].map(r => r.join(",")).join("\n");
+}
+
+/* ---------- health: on-board self-tests (OBD-II mode 06) ---------- */
+const UAS = { 1: [1, ""], 2: [.1, ""], 3: [.01, ""], 4: [.001, ""], 5: [.0000305, ""], 6: [.000305, ""], 7: [.25, "rpm"], 8: [.01, "km/h"], 9: [1, "km/h"], 0x0A: [.122, "mV"], 0x0B: [.001, "V"], 0x0C: [.01, "V"], 0x0D: [.00390625, "mA"], 0x0E: [.001, "A"], 0x0F: [.01, "A"], 0x10: [1, "ms"], 0x11: [100, "ms"], 0x12: [1, "s"], 0x13: [1, "mΩ"], 0x14: [1, "Ω"], 0x15: [1, "kΩ"], 0x16: [.1, "°C", -40], 0x17: [.01, "kPa"], 0x18: [.0117, "kPa"], 0x19: [.079, "kPa"], 0x1A: [1, "kPa"], 0x1B: [10, "kPa"], 0x1C: [.01, "°"], 0x1D: [.5, "°"], 0x1E: [.0000305, "λ"], 0x1F: [.05, "A/F"], 0x20: [.0039062, ""], 0x21: [1, "mHz"], 0x22: [1, "Hz"], 0x23: [1, "kHz"], 0x24: [1, "counts"], 0x25: [1, "km"], 0x26: [.1, "mV/ms"], 0x27: [.01, "g/s"], 0x28: [1, "g/s"], 0x29: [.25, "Pa/s"], 0x2A: [.001, "kg/h"], 0x2B: [1, "switches"], 0x2C: [.01, "g/cyl"], 0x2D: [.01, "mg/stroke"], 0x2E: [1, ""], 0x2F: [.01, "%"], 0x30: [.001526, "%"], 0x31: [.001, "L"], 0x32: [.0000305, "in"], 0x33: [.00024414, ""], 0x34: [1, "min"], 0x35: [10, "ms"], 0x36: [.01, "g"], 0x37: [.1, "g"], 0x38: [1, "g"], 0x39: [.01, "%", -327.68] };
+function uas(id) { const b = UAS[id & 0x7F] || [1, ""]; const signed = !!(id & 0x80); return { f: b[0], unit: b[1], off: signed ? 0 : (b[2] || 0), signed }; }
+const MID_NAME = { 0x01: "Air-fuel sensor, bank 1", 0x02: "Downstream O2 sensor, bank 1", 0x05: "Air-fuel sensor, bank 2", 0x06: "Downstream O2 sensor, bank 2", 0x21: "Catalytic converter, bank 1", 0x22: "Catalytic converter, bank 2", 0x35: "Valve timing, bank 1", 0x36: "Valve timing, bank 2", 0x39: "EVAP, fuel filler open", 0x3A: "EVAP, large leak test", 0x3B: "EVAP, small leak test", 0x3C: "EVAP, very small leak test", 0x3D: "EVAP purge flow", 0x41: "Air-fuel sensor heater, bank 1", 0x42: "Downstream O2 heater, bank 1", 0x45: "Air-fuel sensor heater, bank 2", 0x46: "Downstream O2 heater, bank 2", 0x81: "Fuel system, bank 1", 0x82: "Fuel system, bank 2", 0xA1: "Misfire, all cylinders" };
+for (let c = 1; c <= 6; c++) MID_NAME[0xA1 + c] = `Misfire, cylinder ${c}`;
+const TID_NAME = { 0x01: "Rich-to-lean threshold voltage", 0x02: "Lean-to-rich threshold voltage", 0x03: "Low voltage for switch time", 0x04: "High voltage for switch time", 0x05: "Rich-to-lean switch time", 0x06: "Lean-to-rich switch time", 0x07: "Minimum sensor voltage", 0x08: "Maximum sensor voltage", 0x09: "Time between transitions", 0x0A: "Sensor period", 0x0B: "Misfires, 10-drive average", 0x0C: "Misfires, last drive" };
+function decodeTest(r) {
+  const s = uas(r[2]);
+  const w = (h, l) => { let v = h * 256 + l; if (s.signed && v > 32767) v -= 65536; return v; };
+  const v = w(r[3], r[4]), min = w(r[5], r[6]), max = w(r[7], r[8]);
+  return { mid: r[0], tid: r[1], uasid: r[2], signed: s.signed, scale: s, v, min, max, pass: v >= min && v <= max };
+}
+function fmtTest(t, x) {
+  const v = x * t.scale.f + t.scale.off, a = Math.abs(v);
+  return (a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3)) + (t.scale.unit ? " " + t.scale.unit : "");
+}
+const RAWMAX = t => t.signed ? 32767 : 65535, RAWMIN = t => t.signed ? -32768 : 0;
+function limitText(t) {
+  const lo = t.min > RAWMIN(t), hi = t.max < RAWMAX(t);
+  if (lo && hi) return `limit ${fmtTest(t, t.min)} to ${fmtTest(t, t.max)}`;
+  if (hi) return `limit ${fmtTest(t, t.max)} max`;
+  if (lo) return `limit ${fmtTest(t, t.min)} min`;
+  return "no limit set";
+}
+function closeness(t) {
+  const lo = t.min > RAWMIN(t), hi = t.max < RAWMAX(t);
+  let c = 0;
+  if (hi && !lo) c = t.max <= 0 ? (t.v > 0 ? 1.5 : 0) : t.v / t.max;
+  else if (lo && !hi) c = t.v <= 0 ? 1.5 : t.min / t.v;
+  else if (lo && hi) { const half = (t.max - t.min) / 2 || 1; c = Math.abs(t.v - (t.min + t.max) / 2) / half; }
+  if (!t.pass) c = Math.max(c, 1.01);
+  return Math.max(0, c);
+}
+const isMisfire = t => t.mid >= 0xA1 && t.mid <= 0xAD && (t.tid === 0x0B || t.tid === 0x0C);
+function testGrade(t) {
+  if (isMisfire(t)) return { grade: t.v >= 5 ? "plan" : t.v >= 1 ? "watch" : "good", margin: null };
+  const c = closeness(t);
+  return { grade: !t.pass ? "fail" : c >= 0.85 ? "plan" : c >= 0.6 ? "watch" : "good", margin: Math.round(Math.max(0, 1 - Math.min(c, 1)) * 100) };
+}
+async function readMode06() {
+  if (!state.elm) return;
+  const sup = new Set();
+  for (let base = 0; base <= 0xE0; base += 0x20) {
+    if (base && !sup.has(base)) break;
+    let msgs; try { msgs = parseMsgs(await state.elm.send("06" + hex2(base), 4000)); } catch { break; }
+    const m = msgs.find(m => m.bytes[0] === 0x46 && m.bytes[1] === base);
+    if (!m) break;
+    const d = m.bytes.slice(2, 6);
+    for (let i = 0; i < 32; i++) if (d[i >> 3] & (0x80 >> (i & 7))) sup.add(base + i + 1);
+  }
+  const tests = [];
+  for (const mid of [...sup].filter(m => MID_NAME[m])) {
+    let msgs; try { msgs = parseMsgs(await state.elm.send("06" + hex2(mid), 4000)); } catch { continue; }
+    for (const m of msgs) {
+      if (m.bytes[0] !== 0x46) continue;
+      for (let i = 1; i + 8 < m.bytes.length; i += 9) if (m.bytes[i] === mid) tests.push(decodeTest(m.bytes.slice(i, i + 9)));
+    }
+  }
+  state.m06 = { at: new Date(), tests, count: sup.size };
+  renderHealth(); renderStrip();
+}
+
+/* ---------- health: drive history ---------- */
+let demoDrives = [], driveCache = null;
+const drives = () => state.mode === "demo" ? demoDrives : (driveCache = driveCache || store.get("drives", []));
+function saveDrive(sum) {
+  if (state.mode === "demo") { demoDrives.push(sum); return; }
+  const all = store.get("drives", []); all.push(sum);
+  while (all.length > 400) all.shift();
+  store.set("drives", all); driveCache = all;
+}
+const mean = a => a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const median = a => { if (!a || !a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const stdev = a => { if (!a || a.length < 8) return null; const m = mean(a); return Math.sqrt(mean(a.map(x => (x - m) ** 2))); };
+const rnd = (v, d) => v == null || isNaN(v) ? null : +v.toFixed(d);
+const capPush = (arr, v) => { if (v == null) return; arr.push(v); if (arr.length > 3000) arr.shift(); };
+function trackDrive() {
+  const now = Date.now(), running = V.rpm > 400;
+  if (!running) {
+    if (V.batt != null) { state.offV = (state.offV || []).filter(x => now - x[0] < 90000); state.offV.push([now, V.batt]); }
+    const d = state.drive;
+    if (d) { d.offSince = d.offSince || now; if (now - d.offSince > 20000) endDrive(); }
+    return;
+  }
+  if (!state.drive) {
+    const off = state.offV || [];
+    const rest = off.filter(x => now - x[0] > 8000).map(x => x[1]), crank = off.filter(x => now - x[0] <= 8000).map(x => x[1]);
+    state.drive = { start: now, ectStart: V.ect, preV: rest.length ? median(rest) : null, crankMin: crank.length ? Math.min(...crank) : null,
+      idle: { ltft1: [], ltft2: [], stft1: [], stft2: [], maf: [], rpm: [] }, run: [], c1: [], c2: [], warmup: null, maxEct: null };
+    state.offV = [];
+  }
+  const d = state.drive; d.offSince = null;
+  const rt = (now - d.start) / 1000;
+  if (d.warmup == null && d.ectStart != null && d.ectStart < 40 && V.ect >= 80) d.warmup = rt;
+  if (V.ect != null) d.maxEct = d.maxEct == null ? V.ect : Math.max(d.maxEct, V.ect);
+  const warm = V.ect >= 77, idle = (V.speed ?? 0) < 2 && (V.tps == null || V.tps < 22);
+  if (warm && idle) for (const k of ["ltft1", "ltft2", "stft1", "stft2", "maf", "rpm"]) capPush(d.idle[k], V[k]);
+  if (rt > 60) capPush(d.run, V.batt);
+  if (warm && V.speed > 55 && V.speed < 125) { capPush(d.c1, V.o2b1s2); capPush(d.c2, V.o2b2s2); }
+}
+function misfireSnapshot() {
+  if (!state.m06) return null;
+  const out = [];
+  for (let c = 1; c <= 6; c++) { const t = state.m06.tests.find(t => t.mid === 0xA1 + c && t.tid === 0x0B); out.push(t ? t.v : null); }
+  return out.some(v => v != null) ? out : null;
+}
+function endDrive() {
+  const d = state.drive; state.drive = null;
+  if (!d) return;
+  const dur = (Date.now() - d.start) / 1000;
+  if (dur < 120) return;
+  const im = k => d.idle[k].length >= 20 ? mean(d.idle[k]) : null;
+  saveDrive({ t: d.start, dur: Math.round(dur),
+    ltft1: rnd(im("ltft1"), 1), ltft2: rnd(im("ltft2"), 1), stft1: rnd(im("stft1"), 1), stft2: rnd(im("stft2"), 1),
+    mafIdle: rnd(im("maf"), 2), rpmIdle: rnd(im("rpm"), 0), rpmSd: d.idle.rpm.length >= 20 ? rnd(stdev(d.idle.rpm), 1) : null,
+    restV: rnd(d.preV, 2), crankV: rnd(d.crankMin, 2), runV: rnd(mean(d.run), 2), warmup: rnd(d.warmup, 0), maxEct: rnd(d.maxEct, 1),
+    o2sd1: rnd(stdev(d.c1), 3), o2sd2: rnd(stdev(d.c2), 3), mis: misfireSnapshot() });
+  renderHealth();
+}
+function seedDemoDrives() {
+  const out = [], now = Date.now(), j = a => (Math.random() - .5) * 2 * a;
+  for (let i = 0; i < 14; i++) {
+    const k = i / 13;
+    out.push({ t: now - (14 - i) * 2 * 864e5 - 3 * 36e5, dur: 900 + Math.round(Math.random() * 1500),
+      ltft1: rnd(1.4 + j(.6), 1), ltft2: rnd(5.5 + 7.8 * k + j(.5), 1), stft1: rnd(j(1), 1), stft2: rnd(2 + j(1), 1),
+      mafIdle: rnd(3.8 - .2 * k + j(.05), 2), rpmIdle: Math.round(690 + j(8)), rpmSd: rnd(12 + j(3), 1),
+      restV: rnd(12.62 - .24 * k + j(.02), 2), crankV: rnd(10.6 - .5 * k + j(.05), 2), runV: rnd(14.1 + j(.06), 2),
+      warmup: Math.round(420 + j(40)), maxEct: rnd(93 + j(1.5), 1), o2sd1: rnd(.04 + j(.006), 3), o2sd2: rnd(.06 + .05 * k + j(.006), 3),
+      mis: [0, Math.max(0, Math.round(3 * k + j(.4))), 0, 0, 0, 0] });
+  }
+  return out;
+}
+
+/* ---------- health: maintenance and part age ---------- */
+const MAINT = [
+  { id: "oil", name: "Engine oil and filter", mi: 7500, yr: 1 },
+  { id: "airfilter", name: "Engine air filter", mi: 30000, yr: 3 },
+  { id: "plugs", name: "Spark plugs", mi: 100000 },
+  { id: "belt", name: "Timing belt and water pump", mi: 100000, yr: 7 },
+  { id: "coolant", name: "Engine coolant", mi: 100000, yr: 10 },
+  { id: "atf", name: "Transmission fluid", mi: 60000 },
+  { id: "brakefluid", name: "Brake fluid", yr: 3 },
+  { id: "battery", name: "12V battery", yr: 4 },
+  { id: "o2", name: "Oxygen and air-fuel sensors", mi: 120000 }
+];
+let maintCache = null;
+const maintData = () => maintCache = maintCache || store.get("maint", { odo: "", items: {} });
+const num0 = v => v === "" || v == null || isNaN(+v) ? null : +v;
+function maintStatus(id) {
+  const it = MAINT.find(x => x.id === id), m = maintData(), d = m.items[id] || {};
+  const mi = num0(d.mi ?? it.mi), yr = num0(d.yr ?? it.yr), lastMi = num0(d.lastMi), odo = num0(m.odo);
+  let frac = null; const parts = [];
+  if (lastMi != null && odo != null && mi) { const used = Math.max(0, odo - lastMi); frac = Math.max(frac ?? 0, used / mi); parts.push(`${Math.round(used).toLocaleString()} of ${mi.toLocaleString()} miles`); }
+  if (d.lastDate && yr) { const y = Math.max(0, (Date.now() - new Date(d.lastDate).getTime()) / 3.156e10); frac = Math.max(frac ?? 0, y / yr); parts.push(`${y.toFixed(1)} of ${yr} years`); }
+  if (frac == null) return null;
+  const grade = frac >= 1 ? "plan" : frac >= 0.85 ? "watch" : "good";
+  return { grade, frac, msg: `${it.name}: ${parts.join(" and ")} used${frac >= 1 ? ", so it's due now" : frac >= .85 ? ", so it's due soon" : ""}.` };
+}
+function maintChip(id) {
+  const s = maintStatus(id);
+  return s ? `<span class="chip ${GR[s.grade].c}">${s.grade === "plan" ? "Due" : s.grade === "watch" ? "Due soon" : "OK"} · ${Math.round(s.frac * 100)}%</span>` : `<span class="chip na">Not set</span>`;
+}
+function renderMaint() {
+  const m = maintData();
+  $("#maintOut").innerHTML = `
+    <div class="row" style="justify-content:space-between"><label for="m-odo"><b>Current odometer</b></label><input id="m-odo" class="inp" inputmode="numeric" value="${esc(m.odo || "")}" placeholder="miles"></div>
+    <p class="muted" style="font-size:.85rem">The intervals filled in are common starting points. Change them to match your Maintenance Minder and owner's manual. Enter 0 miles for a part that's never been replaced.</p>
+    <div class="mlist">${MAINT.map(it => { const d = m.items[it.id] || {}; return `<details class="mrow"><summary><span>${esc(it.name)}</span><span id="ms-${it.id}">${maintChip(it.id)}</span></summary><div class="mform">
+      <label>Last done at (miles)<input class="inp" id="m-${it.id}-lastMi" inputmode="numeric" value="${esc(d.lastMi ?? "")}"></label>
+      <label>Last done on<input class="inp" type="date" id="m-${it.id}-lastDate" value="${esc(d.lastDate || "")}"></label>
+      <label>Every (miles)<input class="inp" id="m-${it.id}-mi" inputmode="numeric" value="${esc(d.mi ?? it.mi ?? "")}"></label>
+      <label>Every (years)<input class="inp" id="m-${it.id}-yr" inputmode="decimal" value="${esc(d.yr ?? it.yr ?? "")}"></label></div></details>`; }).join("")}</div>`;
+}
+
+/* ---------- health: component report card ---------- */
+const GR = { unknown: { t: "No data yet", c: "na", r: 0 }, good: { t: "Good", c: "ok", r: 1 }, watch: { t: "Watch", c: "warn", r: 2 }, plan: { t: "Plan replacement", c: "crit", r: 3 }, fail: { t: "Failed self-test", c: "crit", r: 4 } };
+const worse = (a, b) => GR[a].r >= GR[b].r ? a : b;
+const gradeText = (c, g) => g === "plan" && c.planLabel ? c.planLabel : GR[g].t;
+const fPct = v => (v > 0 ? "+" : "") + v.toFixed(1) + "%", fV = v => v.toFixed(2) + " V", fMin = s => (s / 60).toFixed(1) + " min", fGs = v => v.toFixed(1) + " g/s", fSd = v => "±" + v.toFixed(2) + " V", fRpm = v => "±" + Math.round(v) + " rpm", fTemp = v => num(P.ect, v) + " " + unitOf(P.ect);
+const was = (b, f) => b != null ? ` (was ${f(b)} on earlier drives)` : "";
+const TR = {
+  ltft1: { key: "ltft1", label: "Long-term fuel trim at warm idle", abs: true, hi: [7, 12], drift: 4, fmt: fPct, msg: (r, b) => `Long-term fuel trim at warm idle is ${fPct(r)}${was(b, fPct)}. The engine is ${r > 0 ? "adding fuel to make up for extra air or weak fuel delivery" : "pulling fuel out"} on this bank.` },
+  ltft2: { key: "ltft2", label: "Long-term fuel trim at warm idle", abs: true, hi: [7, 12], drift: 4, fmt: fPct, msg: (r, b) => `Long-term fuel trim at warm idle is ${fPct(r)}${was(b, fPct)}. The engine is ${r > 0 ? "adding fuel to make up for extra air or weak fuel delivery" : "pulling fuel out"} on this bank.` },
+  o2sd1: { key: "o2sd1", label: "Downstream O2 swing at cruise", hi: [.15, .22], drift: .04, dir: 1, fmt: fSd, msg: (r, b) => `At steady cruise the downstream O2 sensor swings ${fSd(r)}${was(b, fSd)}. A converter that stores less oxygen lets that sensor swing more.` },
+  o2sd2: { key: "o2sd2", label: "Downstream O2 swing at cruise", hi: [.15, .22], drift: .04, dir: 1, fmt: fSd, msg: (r, b) => `At steady cruise the downstream O2 sensor swings ${fSd(r)}${was(b, fSd)}. A converter that stores less oxygen lets that sensor swing more.` },
+  warmup: { key: "warmup", label: "Warm-up time from cold", hi: [900, 1200], drift: 150, dir: 1, fmt: fMin, msg: (r, b) => `Warming up from cold takes ${fMin(r)}${was(b, fMin)}. A thermostat that sticks open makes warm-up slower.` },
+  maxEct: { key: "maxEct", label: "Highest coolant temperature", hi: [108, 113], fmt: fTemp, msg: r => `Coolant reached ${fTemp(r)} on recent drives, above the normal range.` },
+  restV: { key: "restV", label: "Battery voltage before starting", lo: [12.3, 12.1], drift: .15, dir: -1, fmt: fV, msg: (r, b) => `Resting battery voltage before starting is ${fV(r)}${was(b, fV)}. A healthy, charged battery rests around 12.5 V or more.` },
+  crankV: { key: "crankV", label: "Lowest voltage while cranking", lo: [10, 9.6], drift: .3, dir: -1, fmt: fV, msg: (r, b) => `Voltage dips to ${fV(r)} while cranking${was(b, fV)}. A healthy battery stays above about 10 V.` },
+  runV: { key: "runV", label: "Charging voltage while driving", lo: [12.6, 12.0], hi: [14.9, 15.2], fmt: fV, msg: r => `Charging voltage averages ${fV(r)} while driving, outside the usual 12.6–14.8 V.` },
+  mafIdle: { key: "mafIdle", label: "Airflow at warm idle", lo: [2.5, 2.0], hi: [6, 7], drift: .5, dir: -1, fmt: fGs, msg: (r, b) => `Airflow at warm idle reads ${fGs(r)}${was(b, fGs)}. A dirty MAF sensor slowly reads lower over time.` },
+  rpmSd: { key: "rpmSd", label: "Idle steadiness", hi: [35, 60], drift: 12, dir: 1, fmt: fRpm, msg: (r, b) => `Idle speed wanders ${fRpm(r)}${was(b, fRpm)}. A rough idle can come from a weak coil, worn plug or vacuum leak.` }
+};
+const COMPONENTS = [
+  { id: "cat1", name: "Catalytic converter", sub: "Bank 1, rear", mids: [0x21], trends: ["o2sd1"], guide: "P0420", life: "Converters usually last the life of the engine. Misfires, rich running and oil burning are what wear them out early." },
+  { id: "cat2", name: "Catalytic converter", sub: "Bank 2, front", mids: [0x22], trends: ["o2sd2"], guide: "P0430", life: "Converters usually last the life of the engine. Misfires, rich running and oil burning are what wear them out early." },
+  { id: "af1", name: "Air-fuel sensor", sub: "Bank 1, upstream", mids: [0x01, 0x41], maint: "o2", guide: "P2195", life: "Upstream sensors respond more slowly with age. Many last well past 100,000 miles." },
+  { id: "af2", name: "Air-fuel sensor", sub: "Bank 2, upstream", mids: [0x05, 0x45], maint: "o2", guide: "P2197", life: "Upstream sensors respond more slowly with age. Many last well past 100,000 miles." },
+  { id: "o2b1", name: "Downstream O2 sensor", sub: "Bank 1", mids: [0x02, 0x42], maint: "o2", guide: "P0141" },
+  { id: "o2b2", name: "Downstream O2 sensor", sub: "Bank 2", mids: [0x06, 0x46], maint: "o2", guide: "P0161" },
+  { id: "ign", name: "Ignition", sub: "Spark plugs, coils and misfires", mids: [0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7], trends: ["rpmSd"], misfire: true, maint: "plugs", guide: "P0300" },
+  { id: "fuel1", name: "Fuel system", sub: "Bank 1, rear", mids: [0x81], trends: ["ltft1"], guide: "P0171", planLabel: "Needs repair" },
+  { id: "fuel2", name: "Fuel system", sub: "Bank 2, front", mids: [0x82], trends: ["ltft2"], guide: "P0174", planLabel: "Needs repair" },
+  { id: "vtc", name: "Valve timing", sub: "VTC, both banks", mids: [0x35, 0x36], maint: "oil", guide: "P0011", planLabel: "Needs repair" },
+  { id: "evap", name: "EVAP system", sub: "Fuel vapor leaks", mids: [0x39, 0x3A, 0x3B, 0x3C, 0x3D], guide: "P0456", planLabel: "Needs repair" },
+  { id: "cool", name: "Thermostat and cooling", sub: "Warm-up and temperature", trends: ["warmup", "maxEct"], maint: "coolant", guide: "P0128", planLabel: "Needs repair" },
+  { id: "batt", name: "12V battery", sub: "Resting and cranking voltage", trends: ["restV", "crankV"], maint: "battery", guide: "BATT" },
+  { id: "chg", name: "Charging system", sub: "Alternator", trends: ["runV"], guide: "P0562", planLabel: "Needs repair" },
+  { id: "air", name: "Air intake and MAF", sub: "Filter and airflow sensor", trends: ["mafIdle"], maint: "airfilter", guide: "P0101", planLabel: "Needs service" }
+];
+function series(key) { return drives().filter(d => d[key] != null).map(d => ({ t: d.t, v: d[key] })); }
+function trendGrade(cfg) {
+  const s = series(cfg.key);
+  if (!s.length) return null;
+  const v = s.map(x => x.v), recent = median(v.slice(-3)), base = v.length >= 6 ? median(v.slice(0, Math.min(5, v.length - 3))) : null;
+  let g = "good";
+  const x = cfg.abs ? Math.abs(recent) : recent;
+  if (cfg.hi) { if (x >= cfg.hi[1]) g = "plan"; else if (x >= cfg.hi[0]) g = "watch"; }
+  if (cfg.lo) { if (recent <= cfg.lo[1]) g = worse(g, "plan"); else if (recent <= cfg.lo[0]) g = worse(g, "watch"); }
+  if (base != null && cfg.drift) { const dd = cfg.abs ? Math.abs(recent) - Math.abs(base) : (recent - base) * (cfg.dir || 1); if (dd >= cfg.drift) g = worse(g, "watch"); }
+  return { grade: g, series: s, recent, base, msg: g !== "good" ? cfg.msg(recent, base) : "" };
+}
+function evalComponent(c) {
+  let grade = "unknown"; const why = [], ev = [], trends = [];
+  const tests = state.m06 && c.mids ? state.m06.tests.filter(t => c.mids.includes(t.mid)) : [];
+  for (const t of tests) {
+    const g = testGrade(t); grade = worse(grade, g.grade); ev.push({ t, ...g });
+    if (g.grade === "good") continue;
+    if (isMisfire(t)) { if (t.tid === 0x0B && t.mid !== 0xA1) why.push(`Cylinder ${t.mid - 0xA1} is misfiring about ${t.v} time${t.v === 1 ? "" : "s"} per drive on average, not enough to set a code yet.`); }
+    else if (!t.pass) why.push(`${MID_NAME[t.mid]} failed its last self-test: ${fmtTest(t, t.v)}, ${limitText(t)}.`);
+    else why.push(`${MID_NAME[t.mid]} self-test has only ${g.margin}% margin left before Honda's limit.`);
+  }
+  for (const k of c.trends || []) {
+    const res = trendGrade(TR[k]); trends.push({ cfg: TR[k], res });
+    if (res) { grade = worse(grade, res.grade); if (res.msg) why.push(res.msg); }
+  }
+  if (c.misfire) {
+    const ds = drives().filter(d => d.mis);
+    if (ds.length >= 6) for (let cyl = 1; cyl <= 6; cyl++) {
+      const v = ds.map(d => d.mis[cyl - 1]).filter(x => x != null);
+      if (v.length < 6) continue;
+      const r = median(v.slice(-3)), b = median(v.slice(0, Math.min(5, v.length - 3)));
+      if (r >= 1 && r - b >= 1) { grade = worse(grade, "watch"); why.push(`Cylinder ${cyl} misfire count has been rising over the last ${v.length} drives, from about ${b} to ${r} per drive.`); }
+    }
+  }
+  if (c.maint) { const a = maintStatus(c.maint); if (a) { grade = worse(grade, a.grade); if (a.grade !== "good") why.push(a.msg); } }
+  const hint = state.m06 && c.mids && !c.trends ? "This van didn't report a self-test for this part." : c.trends ? "Needs a few recorded drives." : "Run a self-test check while connected.";
+  return { grade, why: [...new Set(why)], ev, trends, hint };
+}
+function healthSummary() {
+  const g = COMPONENTS.map(c => evalComponent(c).grade);
+  const bad = g.filter(x => GR[x].r >= 3).length, watch = g.filter(x => x === "watch").length, known = g.filter(x => x !== "unknown").length;
+  return { label: bad ? bad + " to fix" : watch ? watch + " to watch" : known ? "Good" : "—", sub: known ? `${known} parts graded` : "No data yet", lvl: bad ? "crit" : watch ? "warn" : "" };
+}
+const timeAgo = d => { const m = Math.round((Date.now() - d) / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
+const dateShort = t => new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
+function healthCard(c, e) {
+  const g = e.grade, ms = e.ev.filter(x => x.margin != null).map(x => x.margin), m = ms.length ? Math.min(...ms) : null;
+  const line = e.why[0] || (g === "good" ? (m != null ? `Self-tests passing with ${m}% margin to spare.` : "Recent drives look normal.") : e.hint);
+  return `<button class="hcard ${GR[g].c}" data-comp="${c.id}"><span class="hd"><span><b>${esc(c.name)}</b><small>${esc(c.sub || "")}</small></span><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></span>${m != null ? `<span class="meter"><i style="width:${m}%"></i></span><span class="mlab">${m}% margin to Honda's limit</span>` : ""}<span class="line">${esc(line)}</span></button>`;
+}
+let lastHealth = 0;
+function renderHealth() {
+  lastHealth = Date.now();
+  const out = $("#healthOut"); if (!out) return;
+  const evs = COMPONENTS.map(c => ({ c, e: evalComponent(c) }));
+  const nBad = evs.filter(x => GR[x.e.grade].r >= 3).length, nWatch = evs.filter(x => x.e.grade === "watch").length, nKnown = evs.filter(x => x.e.grade !== "unknown").length;
+  const dr = drives(), lvl = nBad ? "crit" : nWatch ? "warn" : "";
+  const head = !nKnown ? "No health data yet" : nBad ? `${nBad} part${nBad > 1 ? "s" : ""} need${nBad > 1 ? "" : "s"} attention` : nWatch ? `${nWatch} part${nWatch > 1 ? "s" : ""} to keep an eye on` : "Everything looks healthy";
+  const sub = `${state.m06 ? "Self-tests read " + timeAgo(state.m06.at) : "Self-tests not read yet"} · ${dr.length} drive${dr.length === 1 ? "" : "s"} recorded${state.mode === "demo" ? " (demo history)" : ""}`;
+  const insights = evs.filter(x => GR[x.e.grade].r >= 2).sort((a, b) => GR[b.e.grade].r - GR[a.e.grade].r).flatMap(x => x.e.why.slice(0, 2).map(w => ({ x, w })));
+  out.innerHTML = `
+    <div class="hero ${lvl}"><span class="hero-ico">${lvl ? ICO_WARN : ICO_OK}</span><div class="t"><h3>${head}</h3><p>${esc(sub)}</p></div><button class="btn small" id="m06Btn">${state.elm ? "Check self-tests" : "Connect"}</button></div>
+    ${insights.length ? `<div class="group"><span class="label">What I'm seeing</span><div class="list">${insights.map(({ x, w }) => `<div class="item"><div class="body"><div class="row" style="gap:8px"><b>${esc(x.c.name)}</b><span class="muted" style="font-size:.84rem">${esc(x.c.sub || "")}</span><span class="chip ${GR[x.e.grade].c}">${esc(gradeText(x.c, x.e.grade))}</span></div><p class="muted" style="font-size:.9rem">${esc(w)}</p></div><button class="btn small" data-comp="${x.c.id}">Details</button></div>`).join("")}</div></div>` : ""}
+    <div class="group"><span class="label">Report card</span><div class="hgrid">${evs.map(({ c, e }) => healthCard(c, e)).join("")}</div></div>`;
+  out.querySelectorAll("[data-comp]").forEach(b => b.onclick = () => openComponent(b.dataset.comp));
+  $("#m06Btn").onclick = async () => {
+    if (!state.elm) { show("live"); return; }
+    const b = $("#m06Btn"); b.disabled = true; b.textContent = "Reading…";
+    await readMode06();
+  };
+}
+function trendSvg(s, cfg) {
+  const w = 300, h = 90, v = s.map(x => x.v);
+  const th = [];
+  if (cfg.hi) th.push(cfg.abs ? cfg.hi[0] * (Math.sign(median(v)) || 1) : cfg.hi[0]);
+  if (cfg.lo) th.push(cfg.lo[0]);
+  let lo = Math.min(...v, ...th), hi = Math.max(...v, ...th);
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * .12; lo -= pad; hi += pad;
+  const X = i => s.length === 1 ? w / 2 : 6 + (i / (s.length - 1)) * (w - 12), Y = x => h - ((x - lo) / (hi - lo)) * h;
+  const pts = v.map((x, i) => X(i).toFixed(1) + "," + Y(x).toFixed(1)).join(" ");
+  return th.map(t => `<line class="thr" x1="0" x2="${w}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}"/>`).join("") + `<polyline class="line" points="${pts}"/>` +
+    v.map((x, i) => `<line class="dot" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${Y(x).toFixed(1)}" y2="${Y(x).toFixed(1)}"/>`).join("");
+}
+function openComponent(id) {
+  const c = COMPONENTS.find(x => x.id === id), e = evalComponent(c), g = e.grade;
+  const rec = {
+    unknown: "Not enough data yet. Check the self-tests with the engine warm, and keep the app connected on a few normal drives.",
+    good: "No action needed.",
+    watch: "No repair needed yet. Keep an eye on it. If it keeps moving this way over the next few drives, plan the repair.",
+    plan: c.planLabel ? "This needs attention soon. Use the troubleshooting steps to confirm the cause before buying parts." : "Plan to replace this part soon. Confirm it with the troubleshooting steps or a mechanic before buying it.",
+    fail: "It failed its own self-test, and a trouble code usually follows. Confirm with the troubleshooting steps before replacing parts."
+  }[g];
+  const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list">${e.ev.map(x => `<div class="item"><div class="body"><b>${esc(MID_NAME[x.t.mid])}</b><span class="muted" style="font-size:.84rem">${esc(TID_NAME[x.t.tid] || "Honda test " + hex2(x.t.tid))}</span>${x.margin != null ? `<span class="meter ${GR[x.grade].c}"><i style="width:${x.margin}%"></i></span>` : ""}</div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(isMisfire(x.t) ? x.t.v + " misfires" : fmtTest(x.t, x.t.v))}</b><br><span class="muted" style="font-size:.8rem">${esc(isMisfire(x.t) ? (x.t.tid === 0x0B ? "per drive, average" : "last drive") : limitText(x.t))}</span></div></div>`).join("")}</div></div>` : "";
+  const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div></div>`).join("");
+  const ms = c.maint ? maintStatus(c.maint) : null;
+  openSheet(`<header><div class="t"><span class="label">${esc(c.sub || "")}</span><h2>${esc(c.name)}</h2><div class="row" style="gap:6px"><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></div></div><button class="close" aria-label="Close">×</button></header>
+    <div class="block prose"><p><b>${esc(rec)}</b></p>${e.why.map(w => `<p>${esc(w)}</p>`).join("")}${c.life ? `<p class="muted">${esc(c.life)}</p>` : ""}</div>
+    ${tests}
+    ${trends ? `<div class="group"><span class="label">Trend across drives</span>${trends}</div>` : ""}
+    ${c.maint ? `<div class="group"><span class="label">Part age</span><div class="block"><p style="font-size:.92rem">${ms ? esc(ms.msg) : "Add when this was last replaced under Parts age and maintenance on the Health screen."}</p></div></div>` : ""}
+    ${c.guide ? `<button class="btn primary" id="compGuide">Open troubleshooting steps</button>` : ""}`);
+  const b = $("#compGuide"); if (b) b.onclick = () => openGuide(c.guide);
+}
+
+/* ---------- tabs & wiring ---------- */
+let current = "live";
+function show(v) {
+  current = v;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.v === v));
+  document.querySelectorAll("section.view").forEach(s => s.hidden = s.id !== "view-" + v);
+  if (v === "checks") renderChecks();
+  if (v === "health") renderHealth();
+  if (v === "vehicle") { renderVehicle(); renderMonitors(); }
+  if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => show(b.dataset.v));
+$("#discBtn").onclick = () => disconnect("");
+$("#readBtn").onclick = readCodes;
+$("#clearBtn").onclick = () => {
+  if (!state.elm) { renderCodes("Connect to the van first."); return; }
+  const c = $("#clearConfirm"); c.hidden = false;
+  c.innerHTML = `<div class="confirm"><b>Clear all stored and pending codes?</b><p style="font-size:.9rem">This turns off the check-engine light and resets every readiness monitor to "Not ready". Write the codes down first. If the problem is still there, the codes will come back. Do this with the engine off and the ignition on.</p><div class="row"><button class="btn danger" id="clearYes">Clear codes</button><button class="btn" id="clearNo">Cancel</button></div></div>`;
+  $("#clearYes").onclick = clearCodes; $("#clearNo").onclick = () => c.hidden = true;
+};
+$("#lookupForm").onsubmit = e => {
+  e.preventDefault();
+  const v = $("#lookupIn").value.trim().toUpperCase();
+  if (/^[PCBU][0-3][0-9A-F]{3}$/.test(v)) openGuide(v);
+  else { $("#lookupIn").setCustomValidity("Enter a five-character code like P0171"); $("#lookupIn").reportValidity(); }
+};
+$("#lookupIn").oninput = () => $("#lookupIn").setCustomValidity("");
+$("#monBtn").onclick = async () => { if (state.elm) { try { await readMonitors(); } catch {} } };
+const setUnits = u => { units = u; store.set("units", u); renderVehicle(); if (state.elm) { buildTiles(); renderLive(); } };
+$("#uUS").onclick = () => setUnits("us"); $("#uMet").onclick = () => setUnits("metric");
+$("#recBtn").onclick = () => { state.recording = !state.recording; if (state.recording && !state.elm) $("#copyMsg").textContent = "Connect to the van to record readings."; renderLogInfo(); };
+$("#copyBtn").onclick = async () => {
+  if (!state.rows.length) { $("#copyMsg").textContent = "Nothing recorded yet. Start recording while connected."; return; }
+  const text = csv();
+  try { await navigator.clipboard.writeText(text); $("#copyMsg").textContent = `Copied ${state.rows.length} rows.`; $("#csvFallback").hidden = true; }
+  catch { const ta = $("#csvFallback"); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); $("#copyMsg").textContent = "Couldn't copy automatically. The CSV is selected below; copy it by hand."; }
+};
+$("#dlBtn").onclick = () => {
+  if (!state.rows.length) { $("#copyMsg").textContent = "Nothing recorded yet. Start recording while connected."; return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv()], { type: "text/csv" }));
+  a.download = "tardis-log-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  $("#copyMsg").textContent = inFrame ? "Downloads are blocked inside Claude. Use Copy CSV here, or download from the saved file." : "Download started.";
+};
+
+/* ---------- installable app ---------- */
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; $("#installBtn").hidden = false; });
+window.addEventListener("appinstalled", () => { installPrompt = null; $("#installBtn").hidden = true; });
+$("#installBtn").onclick = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try { await installPrompt.userChoice; } catch {}
+  installPrompt = null; $("#installBtn").hidden = true;
+};
+if ("serviceWorker" in navigator && !inFrame && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+
+$("#maintOut").addEventListener("input", e => {
+  const id = e.target.id; if (!id || !id.startsWith("m-")) return;
+  const m = maintData();
+  if (id === "m-odo") m.odo = e.target.value.replace(/[^\d]/g, "");
+  else { const [, item, field] = id.split("-"); (m.items[item] = m.items[item] || {})[field] = e.target.value; }
+  store.set("maint", m); maintCache = m;
+  MAINT.forEach(it => { const el = document.getElementById("ms-" + it.id); if (el) el.innerHTML = maintChip(it.id); });
+  renderHealth();
+});
+let hiddenTimer = null;
+document.addEventListener("visibilitychange", () => {
+  clearTimeout(hiddenTimer);
+  if (document.hidden && state.elm && state.mode !== "demo") hiddenTimer = setTimeout(() => disconnect("Disconnected after 10 minutes in the background to save the van's battery."), 600000);
+});
+
+renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth();
+</script>
