@@ -5,7 +5,7 @@ const DEMO_MI = /52,2\d\d/;
 
 test("demo van shows its odometer on the Vehicle screen in both units", async ({ page }) => {
   await connectDemo(page);
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   await expect(page.locator("#vehKv")).toContainText(/Odometer\s*52,2\d\d mi \(simulated\)/, { timeout: 30000 });
   await page.locator("#uMet").click();
   await expect(page.locator("#vehKv")).toContainText(/84,01\d km/);
@@ -37,7 +37,7 @@ test("a real van's odometer updates the maintenance odometer and part ages", asy
 test("manual odometer entry still works when the van doesn't report A6", async ({ page }) => {
   await seedStorage(page, { maint: { odo: "40000", items: {} } });
   await connectFakeUsb(page, { without: [0xA6] });
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   await expect(page.locator("#vehKv")).toContainText("Not reported by this van");
   await tab(page, "Health");
   await page.locator("#m-odo").fill("61234");

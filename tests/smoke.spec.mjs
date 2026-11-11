@@ -14,7 +14,7 @@ test("demo van streams live readings", async ({ page }) => {
 
 test("vehicle screen shows VIN from the demo van", async ({ page }) => {
   await connectDemo(page);
-  await tab(page, "Vehicle");
+  await tab(page, "More");
   await expect(page.locator("#vehKv")).toContainText("5FNRL6H9XJBDEMO01");
 });
 
