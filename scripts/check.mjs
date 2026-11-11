@@ -16,6 +16,9 @@ if (!swVer) fail.push('sw.js is missing `const VERSION = "myvan-assistant-vX.Y"`
 if (appVer && swVer && appVer !== swVer) fail.push(`Version mismatch: index.html APP_VERSION ${appVer} vs sw.js ${swVer}. Bump both together.`);
 
 if (/tardis/i.test(html + sw)) fail.push("Old 'Tardis' branding found");
+if (!/^<!doctype html>/i.test(html)) fail.push("index.html must start with <!doctype html> (otherwise the page renders in quirks mode)");
+if (!/<meta name="viewport" content="width=device-width[^"]*">/.test(html)) fail.push('index.html is missing <meta name="viewport" content="width=device-width, ..."> (phones would show a shrunken desktop page)');
+if (!/<meta charset="utf-8">/i.test(html)) fail.push('index.html is missing <meta charset="utf-8">');
 
 if (fail.length) { console.error(fail.map(f => "✗ " + f).join("\n")); process.exit(1); }
 console.log(`✓ static checks passed (version ${appVer})`);
