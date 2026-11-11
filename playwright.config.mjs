@@ -12,6 +12,6 @@ export default defineConfig({
     { name: "phone", use: { viewport: { width: 390, height: 844 }, baseURL: "http://127.0.0.1:8123/" } },
     { name: "laptop", use: { viewport: { width: 1280, height: 800 }, baseURL: "http://127.0.0.1:8123/" } },
     // A real phone: mobile layout rules (meta viewport, 980px default width) only apply with isMobile.
-    { name: "android", testMatch: /(mobile|smoke|navigation)\.spec\.mjs/, use: { ...devices["Pixel 7"], channel: process.env.CI ? undefined : (process.env.PW_CHANNEL || "chrome"), baseURL: "http://127.0.0.1:8123/" } }
+    { name: "android", testMatch: /(mobile|smoke|navigation|back)\.spec\.mjs/, use: { ...devices["Pixel 7"], channel: process.env.CI ? undefined : (process.env.PW_CHANNEL || "chrome"), baseURL: "http://127.0.0.1:8123/" } }
   ]
 });
