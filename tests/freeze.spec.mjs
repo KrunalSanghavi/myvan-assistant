@@ -31,7 +31,8 @@ test("other codes don't show the freeze frame", async ({ page }) => {
 test("clearing codes clears the freeze frame", async ({ page }) => {
   await openCodes(page);
   await page.getByRole("button", { name: "Clear codes" }).click();
-  await page.locator("#clearYes").click();
+  await page.getByRole("button", { name: "Turn the demo engine off" }).click();
+  await page.locator("#clearYes").click({ timeout: 15000 });
   await expect(page.locator("#codesOut .group").first()).toContainText("Stored · 0", { timeout: 15000 });
   await expect(page.locator("#codesOut")).not.toContainText("Freeze frame");
   await page.locator("#lookupIn").fill("P0456");
