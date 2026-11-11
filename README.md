@@ -1,4 +1,4 @@
-# Tardis Monitor
+# MyVan Assistant
 
 A live health monitor and diagnostic assistant for a 2018 Honda Odyssey Elite (3.5L V6, 10-speed). It runs in Chrome as an installable app on Android or a laptop and talks to the van through an ELM327-compatible OBD-II adapter.
 
@@ -25,15 +25,26 @@ Power use: when you disconnect, the app sends `ATLP` to put the adapter into low
 ## Install on Android
 
 1. In this repository, go to **Settings → Pages**, set the source to **Deploy from a branch**, choose `main` and `/ (root)`, and save.
-2. On your phone, open `https://<your-username>.github.io/tardis-monitor/` in Chrome.
+2. On your phone, open `https://<your-username>.github.io/myvan-assistant/` in Chrome.
 3. Tap **Install app** in the header, or use **⋮ → Install app**.
 4. Open it once while online. After that it works without signal.
 
 On iPhone, use the Bluefy browser, because Safari has no Web Bluetooth.
 
-## Updating
+## Development
 
-Edit `index.html`, then change `VERSION` at the top of `sw.js` so installed copies pick up the change.
+The app is static files with no build step. Tooling is only for testing.
+
+```
+npm install
+npm test        # static checks + Playwright smoke tests against the demo van
+npm run serve   # http://localhost:8080
+```
+
+- **Backlog:** every roadmap item is a GitHub issue under the `v2.1`, `v2.x` or `v3` milestone. `agent-ready` issues can be built and verified with the demo van; `needs-van` issues need the real vehicle.
+- **Changes:** one branch and pull request per issue (`Closes #N`). CI runs `npm test` on every PR.
+- **Releases:** bump `APP_VERSION` in `index.html` and `VERSION` in `sw.js` together (CI checks they match), then push a tag such as `v2.1`. The Release workflow publishes the notes. Bumping `VERSION` is what makes installed copies refresh.
+- **Claude Code:** `CLAUDE.md` describes the codebase; `/ship-enhancement <issue>` and `/release` run the workflow.
 
 ## Files
 
@@ -42,7 +53,9 @@ Edit `index.html`, then change `VERSION` at the top of `sw.js` so installed copi
 | `index.html` | The whole app: UI, ELM327 driver, demo emulator, health logic, guides |
 | `sw.js` | Offline cache |
 | `manifest.json`, `icon-*.png` | App install metadata and icons |
-| `ROADMAP.md` | Planned enhancements |
+| `ROADMAP.md` | Planned enhancements, each linked to its GitHub issue |
+| `tests/`, `scripts/check.mjs` | Smoke tests and static checks (`npm test`) |
+| `CLAUDE.md`, `.claude/` | Instructions, agents and workflows for Claude Code |
 
 ## Limits
 
@@ -52,8 +65,6 @@ Edit `index.html`, then change `VERSION` at the top of `sw.js` so installed copi
 - Live data and codes work on other gasoline cars sold in the US from 1996 on, but the normal ranges and guides are tuned for this van.
 
 All data (drive history, notes, maintenance) stays on the device in browser storage.
-
-TARDIS is a trademark of the BBC. This is a personal project with no affiliation.
 
 ## License
 

@@ -1,0 +1,13 @@
+{
+  "name": "myvan-assistant",
+  "private": true,
+  "description": "Dev tooling for MyVan Assistant. The app itself is static files with no build step.",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "npm run check && playwright test",
+    "serve": "npx --yes http-server -p 8080 -c-1 ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  }
+}
