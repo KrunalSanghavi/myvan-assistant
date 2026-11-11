@@ -283,7 +283,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 .mrow summary::-webkit-details-marker{display:none}
 .mform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 12px 12px}
 @media (min-width:700px){.mform{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.mform label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted)}
+.mform label,.flabel{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted)}
+.flabel textarea,.flabel select{color:var(--fg);font-size:.95rem}
 .trend{width:100%;height:90px;display:block}
 .spark .thr{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;opacity:.8}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -1247,6 +1248,7 @@ function renderStrip() {
     ["codes", "Check engine light", state.mil == null ? "—" : state.mil ? "On" : "Off", state.mil ? "warn" : "muted"],
     ["codes", "Trouble codes", codes == null ? "Not read yet" : String(codes), codes ? "warn" : "muted"],
     ["health", "Health", hs.label, hs.lvl || "muted"],
+    ...(() => { const md = maintDue(); return md.label ? [["health", "Maintenance", md.label, md.lvl]] : []; })(),
     ["readings", "All readings", String(liveParams().length), "muted"]
   ];
   const rh = rows.map(([go, l, v, c]) => `<button class="nrow" type="button" data-go="${go}"><span>${l}</span><span class="v ${c}">${esc(v)}</span></button>`).join("");
@@ -1726,10 +1728,77 @@ function maintChip(id) {
   const s = maintStatus(id);
   return s ? `<span class="chip ${GR[s.grade].c}">${s.grade === "plan" ? "Due" : s.grade === "watch" ? "Due soon" : "OK"} · ${Math.round(s.frac * 100)}%</span>` : `<span class="chip na">Not set</span>`;
 }
+/* Service log: each entry { id, part, date, mi, cost, note }. A part's last-done date and mileage follow its newest entry. */
+const services = () => store.get("services", []);
+const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || (num0(b.mi) ?? -1) - (num0(a.mi) ?? -1);
+const partName = id => (MAINT.find(x => x.id === id) || {}).name || "Other service";
+const money = v => num0(v) == null ? "" : "$" + (+v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function syncPartFromLog(part) {
+  if (!MAINT.find(x => x.id === part)) return;
+  const m = maintData(), it = m.items[part] = m.items[part] || {};
+  const latest = services().filter(e => e.part === part).sort(byNewest)[0];
+  if (latest) {
+    it.lastDate = latest.date || it.lastDate;
+    if (num0(latest.mi) != null) { it.lastMi = String(latest.mi); if (num0(m.odo) == null || +latest.mi > +m.odo) { m.odo = String(latest.mi); m.odoSrc = "manual"; m.odoAt = null; } }
+    it.fromLog = true;
+  } else if (it.fromLog) { delete it.lastDate; delete it.lastMi; delete it.fromLog; }
+  store.set("maint", m); maintCache = m;
+}
+function maintDue() {
+  const due = [], soon = [];
+  for (const it of MAINT) { const st = maintStatus(it.id); if (!st) continue; if (st.grade === "plan") due.push(it.name); else if (st.grade === "watch") soon.push(it.name); }
+  return { due, soon, label: due.length ? (due.length === 1 ? due[0] + " is due" : due.length + " parts due") : soon.length ? (soon.length === 1 ? soon[0] + " due soon" : soon.length + " parts due soon") : "" , lvl: due.length ? "crit" : soon.length ? "warn" : "" };
+}
+function serviceListHtml() {
+  const list = services().sort(byNewest);
+  if (!list.length) return `<p class="muted" style="font-size:.88rem">No services logged yet. Logging one updates that part's age below.</p>`;
+  const total = list.reduce((a, e) => a + (num0(e.cost) || 0), 0);
+  return `<div class="list" id="svcList">${list.map(e => `<div class="item" data-svc="${esc(e.id)}"><div class="body"><b>${esc(partName(e.part))}</b>
+      <span class="muted" style="font-size:.86rem">${esc([e.date ? new Date(e.date + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "", num0(e.mi) != null ? (+e.mi).toLocaleString() + " mi" : "", money(e.cost)].filter(Boolean).join(" · "))}</span>
+      ${e.note ? `<span style="font-size:.88rem">${esc(e.note)}</span>` : ""}</div>
+      <div class="row" style="gap:6px"><button class="btn small" type="button" data-svc-edit="${esc(e.id)}">Edit</button><button class="btn small danger" type="button" data-svc-del="${esc(e.id)}">Delete</button></div></div>`).join("")}</div>
+    ${total ? `<p class="muted" style="font-size:.84rem">${list.length} service${list.length === 1 ? "" : "s"} · ${money(total)} in total</p>` : ""}`;
+}
+function openServiceForm(id) {
+  const e = id ? services().find(x => x.id === id) : null, m = maintData();
+  const today = new Date().toISOString().slice(0, 10);
+  openSheet(`<header><div class="t"><span class="label">Maintenance</span><h2>${e ? "Edit service" : "Log a service"}</h2></div><button class="close" aria-label="Close">×</button></header>
+    <form id="svcForm" class="stack" style="gap:12px">
+      <label class="flabel">What was done
+        <select class="inp" id="svcPart">${MAINT.map(it => `<option value="${it.id}" ${e && e.part === it.id ? "selected" : ""}>${esc(it.name)}</option>`).join("")}<option value="other" ${e && e.part === "other" ? "selected" : ""}>Other service</option></select></label>
+      <div class="mform" style="padding:0">
+        <label>Date<input class="inp" type="date" id="svcDate" required value="${esc(e ? e.date : today)}"></label>
+        <label>Mileage<input class="inp" id="svcMi" inputmode="numeric" placeholder="miles" value="${esc(e ? (e.mi ?? "") : (m.odo || ""))}"></label>
+        <label>Cost<input class="inp" id="svcCost" inputmode="decimal" placeholder="$" value="${esc(e ? (e.cost ?? "") : "")}"></label>
+      </div>
+      <label class="flabel">Notes<textarea id="svcNote" placeholder="Shop, parts used, oil type…">${esc(e ? e.note || "" : "")}</textarea></label>
+      <p class="muted" id="svcErr" role="alert" style="font-size:.88rem"></p>
+      <button class="btn primary" type="submit">${e ? "Save changes" : "Save service"}</button>
+    </form>`);
+  $("#svcForm").onsubmit = ev => {
+    ev.preventDefault();
+    const date = $("#svcDate").value, mi = $("#svcMi").value.replace(/[^\d]/g, ""), cost = $("#svcCost").value.replace(/[^\d.]/g, "");
+    if (!date) { $("#svcErr").textContent = "Pick the date the service was done."; return; }
+    if (cost && isNaN(+cost)) { $("#svcErr").textContent = "Cost should be a number, like 59.99."; return; }
+    const entry = { id: e ? e.id : Date.now().toString(36) + Math.random().toString(36).slice(2, 6), part: $("#svcPart").value, date, mi: mi === "" ? null : +mi, cost: cost === "" ? null : +cost, note: $("#svcNote").value.trim() };
+    const list = services().filter(x => x.id !== entry.id); list.push(entry);
+    store.set("services", list);
+    syncPartFromLog(entry.part); if (e && e.part !== entry.part) syncPartFromLog(e.part);
+    closeSheet(); renderMaint(); renderHealth();
+  };
+}
+function deleteService(id) {
+  const e = services().find(x => x.id === id); if (!e) return;
+  store.set("services", services().filter(x => x.id !== id));
+  syncPartFromLog(e.part); renderMaint(); renderHealth();
+}
 function renderMaint() {
-  const m = maintData();
+  const m = maintData(), md = maintDue();
   $("#maintOut").innerHTML = `
-    <div class="row" style="justify-content:space-between"><label for="m-odo"><b>Current odometer</b></label><input id="m-odo" class="inp" inputmode="numeric" value="${esc(m.odo || "")}" placeholder="miles"></div>
+    ${md.label ? `<div class="notice warn" id="maintDue" role="status"><b>${esc(md.label)}.</b> ${esc([...md.due.map(n => n + ": due now"), ...md.soon.map(n => n + ": due soon")].join(" · "))}</div>` : ""}
+    <div class="row between"><h3>Service history</h3><button class="btn small primary" type="button" id="logSvcBtn">Log a service</button></div>
+    ${serviceListHtml()}
+    <div class="row" style="justify-content:space-between;margin-top:6px"><label for="m-odo"><b>Current odometer</b></label><input id="m-odo" class="inp" inputmode="numeric" value="${esc(m.odo || "")}" placeholder="miles"></div>
     <p class="muted" id="odoSrc" style="font-size:.85rem;margin-top:-6px">${odoSrcText()}</p>
     <p class="muted" style="font-size:.85rem">The intervals filled in are common starting points. Change them to match your Maintenance Minder and owner's manual. Enter 0 miles for a part that's never been replaced.</p>
     <div class="mlist">${MAINT.map(it => { const d = m.items[it.id] || {}; return `<details class="mrow"><summary><span>${esc(it.name)}</span><span id="ms-${it.id}">${maintChip(it.id)}</span></summary><div class="mform">
@@ -1991,10 +2060,21 @@ $("#maintOut").addEventListener("input", e => {
   const id = e.target.id; if (!id || !id.startsWith("m-")) return;
   const m = maintData();
   if (id === "m-odo") { m.odo = e.target.value.replace(/[^\d]/g, ""); m.odoSrc = "manual"; m.odoAt = null; const s = $("#odoSrc"); if (s) s.innerHTML = odoSrcText(); }
-  else { const [, item, field] = id.split("-"); (m.items[item] = m.items[item] || {})[field] = e.target.value; }
+  else { const [, item, field] = id.split("-"); const it = m.items[item] = m.items[item] || {}; it[field] = e.target.value; if (field === "lastMi" || field === "lastDate") delete it.fromLog; }
   store.set("maint", m); maintCache = m;
   MAINT.forEach(it => { const el = document.getElementById("ms-" + it.id); if (el) el.innerHTML = maintChip(it.id); });
   renderHealth();
+});
+$("#maintOut").addEventListener("click", e => {
+  const t = e.target;
+  if (t.closest("#logSvcBtn")) { openServiceForm(); return; }
+  const ed = t.closest("[data-svc-edit]"); if (ed) { openServiceForm(ed.dataset.svcEdit); return; }
+  const del = t.closest("[data-svc-del]");
+  if (del) {
+    if (del.dataset.confirm) { deleteService(del.dataset.svcDel); return; }
+    del.dataset.confirm = "1"; del.textContent = "Tap again to delete";
+    setTimeout(() => { if (del.isConnected) { delete del.dataset.confirm; del.textContent = "Delete"; } }, 4000);
+  }
 });
 let hiddenTimer = null;
 document.addEventListener("visibilitychange", () => {
