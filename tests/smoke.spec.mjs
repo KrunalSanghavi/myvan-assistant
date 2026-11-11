@@ -1,19 +1,4 @@
-import { test, expect } from "@playwright/test";
-
-// Fails the test on any uncaught page error or console error.
-test.beforeEach(async ({ page }) => {
-  page.errors = [];
-  page.on("pageerror", e => page.errors.push(e.message));
-  page.on("console", m => { if (m.type() === "error" && !/favicon|fonts\.g/.test(m.text())) page.errors.push(m.text()); });
-});
-test.afterEach(async ({ page }) => { expect(page.errors, "page errors").toEqual([]); });
-
-export async function connectDemo(page) {
-  await page.goto("index.html");
-  await page.getByRole("button", { name: /demo/i }).click();
-  await expect(page.locator("#connText")).toHaveText("Demo van", { timeout: 15000 });
-}
-const tab = (page, name) => page.getByRole("tab", { name: new RegExp("^" + name) }).click();
+import { test, expect, connectDemo, tab } from "./fixtures.mjs";
 
 test("loads with MyVan branding", async ({ page }) => {
   await page.goto("index.html");

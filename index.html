@@ -298,6 +298,12 @@ textarea{width:100%;min-height:96px;border:0;border-radius:12px;background:var(-
       <h3>Units</h3>
       <div class="seg" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph</button><button id="uMet" type="button">°C · km/h</button></div>
     </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <h3>Backup and restore</h3>
+      <p class="muted" style="font-size:.88rem">Save your drive history, maintenance, code notes and settings to a file. Restore it on a new phone, or after clearing the browser's data, so nothing is lost. The demo van's simulated drives aren't included.</p>
+      <div class="row"><button class="btn" id="backupBtn" type="button">Back up to a file</button><button class="btn" id="restoreBtn" type="button">Restore from a file</button><input type="file" id="restoreIn" accept=".json,application/json" hidden aria-label="Backup file"></div>
+      <div id="backupMsg" role="status"></div>
+    </div>
     <div class="panel prose">
       <h3>What this tool can and can't see</h3>
       <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
@@ -426,7 +432,9 @@ const PARAMS = [
   { pid: 0x33, key: "baro", name: "Barometric pressure", kind: "kpa", n: 1, f: b => b[0], enc: v => u8(v), g: [70, 105], group: "Electrical",
     desc: "Outside air pressure, used for fuel calculations. Around 97–101 kPa near sea level." },
   { pid: 0x1F, key: "runtime", name: "Time since engine start", kind: "sec", n: 2, f: b => b[0] * 256 + b[1], enc: v => u16(v), group: "hidden",
-    desc: "Seconds since the engine started." }
+    desc: "Seconds since the engine started." },
+  { pid: 0xA6, key: "odo", name: "Odometer", kind: "dist", n: 4, f: b => (b[0] * 16777216 + b[1] * 65536 + b[2] * 256 + b[3]) / 10, enc: v => { const x = Math.round(v * 10); return [(x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255]; }, group: "hidden",
+    desc: "Total distance from the engine computer (PID A6). Not every van reports it." }
 ];
 const P = Object.fromEntries(PARAMS.map(p => [p.key, p]));
 const BY_PID = Object.fromEntries(PARAMS.filter(p => p.pid != null).map(p => [p.pid, p]));
@@ -435,11 +443,11 @@ const GROUPS = ["Engine", "Temperatures", "Fuel and air", "Electrical"];
 function conv(p, v) {
   if (v == null || isNaN(v)) return null;
   if (p.kind === "temp") return units === "us" ? v * 9 / 5 + 32 : v;
-  if (p.kind === "speed") return units === "us" ? v * 0.621371 : v;
+  if (p.kind === "speed" || p.kind === "dist") return units === "us" ? v * 0.621371 : v;
   return v;
 }
 function unitOf(p) {
-  return { temp: units === "us" ? "°F" : "°C", speed: units === "us" ? "mph" : "km/h", rpm: "rpm", pct: "%", kpa: "kPa", gs: "g/s", deg: "°", trim: "%", volt: "V", volt2: "V", lambda: "", sec: "" }[p.kind];
+  return { temp: units === "us" ? "°F" : "°C", speed: units === "us" ? "mph" : "km/h", dist: units === "us" ? "mi" : "km", rpm: "rpm", pct: "%", kpa: "kPa", gs: "g/s", deg: "°", trim: "%", volt: "V", volt2: "V", lambda: "", sec: "" }[p.kind];
 }
 function num(p, v) {
   const c = conv(p, v);
@@ -451,6 +459,7 @@ function num(p, v) {
     case "lambda": return c.toFixed(2);
     case "gs": return c.toFixed(1);
     case "deg": return c.toFixed(1);
+    case "dist": return Math.round(c).toLocaleString();
     case "sec": { const m = Math.floor(c / 60), s = Math.round(c % 60); return m + ":" + String(s).padStart(2, "0"); }
     default: return Math.round(c).toString();
   }
@@ -629,8 +638,8 @@ function decodeDtcs(bytes, can) {
 
 /* ---------- demo vehicle (emulates an ELM327 on a CAN bus) ---------- */
 const demo = {
-  t0: 0, cleared: false, clearedAt: 0, runtime0: 1260,
-  sup: new Set([0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x15, 0x19, 0x1F, 0x2F, 0x33, 0x3C, 0x3D, 0x42, 0x44, 0x46, 0x34, 0x38]),
+  t0: 0, cleared: false, clearedAt: 0, runtime0: 1260, odo0: 84012.4,
+  sup: new Set([0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x15, 0x19, 0x1F, 0x2F, 0x33, 0x3C, 0x3D, 0x42, 0x44, 0x46, 0x34, 0x38, 0xA6]),
   vin: "5FNRL6H9XJBDEMO01",
   vals() {
     const t = (performance.now() - this.t0) / 1000;
@@ -646,7 +655,7 @@ const demo = {
       cat1: drive ? 560 + ramp * 120 : 520, cat2: drive ? 575 + ramp * 120 : 530,
       stft1: r(3), ltft1: 1.6, stft2: 4 + r(3.5), ltft2: 13.3,
       lambda: drive && ramp > .9 && ph < 35 ? 0.93 : 1.0, af1: 1 + r(.012), af2: 0.996 + r(.02), o2b1s2: .68 + r(.03), o2b2s2: .66 + r(.04),
-      fuel: 41, ecuv: 14.1 + r(.08), batt: 14.1 + r(.05), baro: 99, runtime: this.runtime0 + t
+      fuel: 41, ecuv: 14.1 + r(.08), batt: 14.1 + r(.05), baro: 99, runtime: this.runtime0 + t, odo: this.odo0 + t * 0.012
     };
   },
   m06: (() => {
@@ -699,7 +708,7 @@ const demo = {
     }
     if (cmd.startsWith("01") && cmd.length === 4) {
       const pid = parseInt(cmd.slice(2), 16);
-      if (pid === 0 || pid === 0x20 || pid === 0x40) return "41" + hex2(pid) + toHex(this.bitmask(pid));
+      if (pid % 0x20 === 0 && pid <= 0xC0) return "41" + hex2(pid) + toHex(this.bitmask(pid));
       if (pid === 1) {
         const n = c.stored.length;
         const C = 0xE5, D = this.cleared ? 0xE5 : 0x04;
@@ -843,7 +852,7 @@ async function disconnect(msg) {
 
 async function readSupported() {
   state.supported = new Set();
-  for (const base of [0x00, 0x20, 0x40]) {
+  for (const base of [0x00, 0x20, 0x40, 0x60, 0x80, 0xA0]) {
     if (base && !state.supported.has(base)) break;
     let msgs; try { msgs = parseMsgs(await state.elm.send("01" + hex2(base), 4000)); } catch { break; }
     const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === base);
@@ -909,7 +918,7 @@ function pushVal(key, v) {
 async function readParam(p) {
   const msgs = parseMsgs(await state.elm.send("01" + hex2(p.pid), 2500));
   const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === p.pid);
-  if (m && m.bytes.length >= 2 + p.n) pushVal(p.key, p.f(m.bytes.slice(2)));
+  if (m && m.bytes.length >= 2 + p.n) { pushVal(p.key, p.f(m.bytes.slice(2))); if (p.key === "odo") syncOdometer(); }
 }
 async function readBatt() {
   const r = await state.elm.send("ATRV", 2000);
@@ -1005,7 +1014,7 @@ function afterSample() {
 
 /* ---------- rendering ---------- */
 let raf = 0;
-function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (sheetRefresh) sheetRefresh(); }); }
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "vehicle") renderVehicle(); if (sheetRefresh) sheetRefresh(); }); }
 
 function renderConnect(busy) {
   const box = $("#connectBox");
@@ -1033,8 +1042,8 @@ function renderConnect(busy) {
       </ul>
       <span class="label" style="margin-top:6px">Adapter commands used</span>
       <div class="port">ATZ  ATE0  ATSP0     reset, auto protocol
-0100 0120 0140    supported readings
-01xx              live data
+0100 … 01A0       supported readings
+01xx              live data, odometer (A6)
 03 / 07 / 0A      stored / pending / permanent
 04                clear codes
 0902  ATRV        VIN, battery voltage</div>
@@ -1172,6 +1181,7 @@ function renderVehicle() {
     ["Protocol", state.protocol ? esc(state.protocol) : "—"],
     ["Adapter", state.elmVer ? esc(state.elmVer) : "—"],
     ["Battery", V.batt != null ? fmt("batt") : "—"],
+    ["Odometer", V.odo != null ? fmt("odo") + (state.mode === "demo" ? " (simulated)" : "") : state.elm && !state.supported.has(0xA6) ? "Not reported by this van" : "—"],
     ["Readings supported", state.elm ? PARAMS.filter(p => p.pid != null && state.supported.has(p.pid)).length + " of " + PARAMS.filter(p => p.pid != null).length : "—"]
   ];
   $("#vehKv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -1255,6 +1265,52 @@ function csv() {
   const head = ["time", ...LOG_KEYS.map(k => `${k} (${unitOf(P[k]) || "-"})`)];
   return [head, ...state.rows].map(r => r.join(",")).join("\n");
 }
+
+/* ---------- backup and restore ---------- */
+const BACKUP_FORMAT = 1, KEY_PREFIX = "odx:";
+function storedKeys() {
+  const out = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(KEY_PREFIX)) out.push(k.slice(KEY_PREFIX.length)); } } catch {}
+  return out;
+}
+function makeBackup() {
+  const data = {};
+  for (const k of storedKeys()) data[k] = store.get(k, null);
+  return { app: "myvan-assistant", format: BACKUP_FORMAT, appVersion: APP_VERSION, exported: new Date().toISOString(), data };
+}
+function summarizeBackup(data) {
+  const keys = Object.keys(data), m = data.maint;
+  return { drives: Array.isArray(data.drives) ? data.drives.length : 0, notes: keys.filter(k => k.startsWith("note:") && data[k]).length, parts: m && m.items ? Object.values(m.items).filter(x => x && (x.lastMi || x.lastDate)).length : 0 };
+}
+const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+const summaryText = s => `${plural(s.drives, "drive")}, ${plural(s.notes, "code note")} and maintenance dates for ${plural(s.parts, "part")}`;
+function parseBackup(text) {
+  let b;
+  try { b = JSON.parse(text); } catch { throw new Error("This file isn't a MyVan backup. It couldn't be read as a backup file."); }
+  const isObj = x => x != null && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(b) || b.app !== "myvan-assistant" || !isObj(b.data)) throw new Error("This file isn't a MyVan backup.");
+  if (!(b.format >= 1)) throw new Error("This backup file is damaged: it has no format version.");
+  if (b.format > BACKUP_FORMAT) throw new Error("This backup was made by a newer version of the app. Update the app, then try again.");
+  if (b.data.drives != null && !Array.isArray(b.data.drives)) throw new Error("The drive history in this backup is damaged.");
+  if (b.data.maint != null && !isObj(b.data.maint)) throw new Error("The maintenance data in this backup is damaged.");
+  return b;
+}
+function applyBackup(b) {
+  const old = storedKeys(), snapshot = {};
+  try { for (const k of old) snapshot[k] = localStorage.getItem(KEY_PREFIX + k); } catch {}
+  try {
+    for (const [k, v] of Object.entries(b.data)) localStorage.setItem(KEY_PREFIX + k, JSON.stringify(v));
+    for (const k of old) if (!(k in b.data)) localStorage.removeItem(KEY_PREFIX + k);
+  } catch {
+    // Put everything back the way it was so a full or blocked storage never leaves half a restore.
+    try { for (const k of storedKeys()) if (!(k in snapshot)) localStorage.removeItem(KEY_PREFIX + k); for (const k in snapshot) localStorage.setItem(KEY_PREFIX + k, snapshot[k]); } catch {}
+    throw new Error("Couldn't save the restored data because the browser's storage is full or blocked. Nothing was changed.");
+  }
+  driveCache = null; maintCache = null; units = store.get("units", "us");
+  renderMaint(); renderVehicle(); renderHealth();
+  if (state.elm) { buildTiles(); renderLive(); }
+}
+function backupNotice(kind, html) { $("#backupMsg").innerHTML = html ? `<div class="notice${kind ? " " + kind : ""}"${kind === "warn" ? ' role="alert"' : ""}>${html}</div>` : ""; }
 
 /* ---------- health: on-board self-tests (OBD-II mode 06) ---------- */
 const UAS = { 1: [1, ""], 2: [.1, ""], 3: [.01, ""], 4: [.001, ""], 5: [.0000305, ""], 6: [.000305, ""], 7: [.25, "rpm"], 8: [.01, "km/h"], 9: [1, "km/h"], 0x0A: [.122, "mV"], 0x0B: [.001, "V"], 0x0C: [.01, "V"], 0x0D: [.00390625, "mA"], 0x0E: [.001, "A"], 0x0F: [.01, "A"], 0x10: [1, "ms"], 0x11: [100, "ms"], 0x12: [1, "s"], 0x13: [1, "mΩ"], 0x14: [1, "Ω"], 0x15: [1, "kΩ"], 0x16: [.1, "°C", -40], 0x17: [.01, "kPa"], 0x18: [.0117, "kPa"], 0x19: [.079, "kPa"], 0x1A: [1, "kPa"], 0x1B: [10, "kPa"], 0x1C: [.01, "°"], 0x1D: [.5, "°"], 0x1E: [.0000305, "λ"], 0x1F: [.05, "A/F"], 0x20: [.0039062, ""], 0x21: [1, "mHz"], 0x22: [1, "Hz"], 0x23: [1, "kHz"], 0x24: [1, "counts"], 0x25: [1, "km"], 0x26: [.1, "mV/ms"], 0x27: [.01, "g/s"], 0x28: [1, "g/s"], 0x29: [.25, "Pa/s"], 0x2A: [.001, "kg/h"], 0x2B: [1, "switches"], 0x2C: [.01, "g/cyl"], 0x2D: [.01, "mg/stroke"], 0x2E: [1, ""], 0x2F: [.01, "%"], 0x30: [.001526, "%"], 0x31: [.001, "L"], 0x32: [.0000305, "in"], 0x33: [.00024414, ""], 0x34: [1, "min"], 0x35: [10, "ms"], 0x36: [.01, "g"], 0x37: [.1, "g"], 0x38: [1, "g"], 0x39: [.01, "%", -327.68] };
@@ -1404,6 +1460,27 @@ const MAINT = [
 let maintCache = null;
 const maintData = () => maintCache = maintCache || store.get("maint", { odo: "", items: {} });
 const num0 = v => v === "" || v == null || isNaN(+v) ? null : +v;
+// The van's odometer (PID A6, km) keeps the maintenance odometer (miles) current. Demo readings are never saved.
+const vanMiles = () => V.odo != null ? Math.round(V.odo * 0.621371) : null;
+function odoSrcText() {
+  const m = maintData(), vm = vanMiles();
+  if (state.mode === "demo" && vm != null) return `The demo van reports ${vm.toLocaleString()} miles. Demo readings aren't saved.`;
+  if (m.odoSrc === "van" && m.odoAt) return `Read from the van ${esc(timeAgo(m.odoAt))}. It updates by itself whenever you're connected.`;
+  return "Type it in, or connect to the van: if it reports its odometer, this updates by itself.";
+}
+function syncOdometer() {
+  const vm = vanMiles();
+  if (vm == null || !state.elm) return;
+  const s = $("#odoSrc");
+  if (state.mode === "demo") { if (s) s.innerHTML = odoSrcText(); return; }
+  const m = maintData(), changed = m.odo !== String(vm) || m.odoSrc !== "van";
+  if (!changed && Date.now() - (m.odoAt || 0) < 60000) return;
+  m.odo = String(vm); m.odoSrc = "van"; m.odoAt = Date.now();
+  store.set("maint", m); maintCache = m;
+  const inp = $("#m-odo"); if (inp && document.activeElement !== inp) inp.value = m.odo;
+  if (s) s.innerHTML = odoSrcText();
+  if (changed) { MAINT.forEach(it => { const el = document.getElementById("ms-" + it.id); if (el) el.innerHTML = maintChip(it.id); }); renderHealth(); }
+}
 function maintStatus(id) {
   const it = MAINT.find(x => x.id === id), m = maintData(), d = m.items[id] || {};
   const mi = num0(d.mi ?? it.mi), yr = num0(d.yr ?? it.yr), lastMi = num0(d.lastMi), odo = num0(m.odo);
@@ -1422,6 +1499,7 @@ function renderMaint() {
   const m = maintData();
   $("#maintOut").innerHTML = `
     <div class="row" style="justify-content:space-between"><label for="m-odo"><b>Current odometer</b></label><input id="m-odo" class="inp" inputmode="numeric" value="${esc(m.odo || "")}" placeholder="miles"></div>
+    <p class="muted" id="odoSrc" style="font-size:.85rem;margin-top:-6px">${odoSrcText()}</p>
     <p class="muted" style="font-size:.85rem">The intervals filled in are common starting points. Change them to match your Maintenance Minder and owner's manual. Enter 0 miles for a part that's never been replaced.</p>
     <div class="mlist">${MAINT.map(it => { const d = m.items[it.id] || {}; return `<details class="mrow"><summary><span>${esc(it.name)}</span><span id="ms-${it.id}">${maintChip(it.id)}</span></summary><div class="mform">
       <label>Last done at (miles)<input class="inp" id="m-${it.id}-lastMi" inputmode="numeric" value="${esc(d.lastMi ?? "")}"></label>
@@ -1619,6 +1697,33 @@ $("#dlBtn").onclick = () => {
   $("#copyMsg").textContent = inFrame ? "Downloads are blocked inside Claude. Use Copy CSV here, or download from the saved file." : "Download started.";
 };
 
+$("#backupBtn").onclick = () => {
+  const b = makeBackup(), s = summarizeBackup(b.data);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" }));
+  a.download = "myvan-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  backupNotice("", inFrame ? "Downloads are blocked inside Claude. Open the app in Chrome to save a backup." : `Backup saved with ${esc(summaryText(s))}. Keep the file somewhere safe, such as your cloud drive.`);
+};
+$("#restoreBtn").onclick = () => $("#restoreIn").click();
+$("#restoreIn").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  let b;
+  try {
+    if (f.size > 20e6) throw new Error("This file is too large to be a MyVan backup.");
+    b = parseBackup(await f.text());
+  } catch (err) { backupNotice("warn", esc(err.message) + " Your current data hasn't been changed."); return; }
+  const s = summarizeBackup(b.data), when = b.exported && !isNaN(new Date(b.exported)) ? new Date(b.exported).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "an unknown date";
+  $("#backupMsg").innerHTML = `<div class="confirm"><b>Restore this backup?</b><p style="font-size:.9rem">Made ${esc(when)}${b.appVersion ? " with version " + esc(b.appVersion) : ""}. It has ${esc(summaryText(s))}.</p><p style="font-size:.9rem">This replaces the drive history, maintenance, notes and settings on this device. Back up first if you might want them.</p><div class="row"><button class="btn danger" id="restoreYes" type="button">Replace my data</button><button class="btn" id="restoreNo" type="button">Cancel</button></div></div>`;
+  $("#restoreNo").onclick = () => backupNotice("", "");
+  $("#restoreYes").onclick = () => {
+    try { applyBackup(b); backupNotice("", `Restored ${esc(summaryText(s))}.`); }
+    catch (err) { backupNotice("warn", esc(err.message)); }
+  };
+};
+
 /* ---------- installable app ---------- */
 let installPrompt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; $("#installBtn").hidden = false; });
@@ -1634,7 +1739,7 @@ if ("serviceWorker" in navigator && !inFrame && location.protocol === "https:") 
 $("#maintOut").addEventListener("input", e => {
   const id = e.target.id; if (!id || !id.startsWith("m-")) return;
   const m = maintData();
-  if (id === "m-odo") m.odo = e.target.value.replace(/[^\d]/g, "");
+  if (id === "m-odo") { m.odo = e.target.value.replace(/[^\d]/g, ""); m.odoSrc = "manual"; m.odoAt = null; const s = $("#odoSrc"); if (s) s.innerHTML = odoSrcText(); }
   else { const [, item, field] = id.split("-"); (m.items[item] = m.items[item] || {})[field] = e.target.value; }
   store.set("maint", m); maintCache = m;
   MAINT.forEach(it => { const el = document.getElementById("ms-" + it.id); if (el) el.innerHTML = maintChip(it.id); });
