@@ -328,8 +328,16 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
   <section class="view" id="view-health" hidden>
     <p class="muted" style="font-size:.9rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p>
     <div id="healthOut" class="stack"></div>
+    <div class="rows"><button class="nrow" type="button" data-go="history"><span>History across drives</span><span class="v muted" id="histCount"></span></button></div>
     <div class="group"><span class="label">Parts age and maintenance</span><div class="panel stack" id="maintOut" style="gap:12px"></div></div>
     <p class="muted" style="font-size:.84rem;max-width:68ch">Grades are estimates to help you plan, not a guarantee. Self-test limits come from the engine computer itself. Trend warnings get more reliable after a couple of weeks of normal driving. Confirm with the troubleshooting steps or a mechanic before buying parts.</p>
+  </section>
+
+  <!-- HISTORY ACROSS DRIVES (from Health) -->
+  <section class="view" id="view-history" hidden>
+    <label class="flabel">Reading<select class="inp" id="histMetric"></select></label>
+    <div class="seg full" role="group" aria-label="Date range"><button type="button" data-range="14">2 weeks</button><button type="button" data-range="30">30 days</button><button type="button" data-range="90">90 days</button><button type="button" data-range="0">All</button></div>
+    <div id="histOut" class="stack"></div>
   </section>
 
   <!-- CODES -->
@@ -444,7 +452,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.5"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.6"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1716,7 +1724,7 @@ function economy(km, l) {
 }
 const econText = (km, l) => { const e = economy(km, l); return e == null ? "—" : units === "us" ? e.toFixed(1) + " mpg" : e.toFixed(1) + " L/100 km"; };
 const tripMoney = v => v == null ? "—" : "$" + v.toFixed(2);
-const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min"; };
+const durText = sec => { const m = Math.round(sec / 60); return m < 1 ? "under 1 min" : m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min"; };
 // The trip in progress, or the last one this session.
 function currentTrip() {
   if (state.drive && state.drive.trip) return { live: true, ...state.drive.trip };
@@ -2065,6 +2073,7 @@ let lastHealth = 0;
 function renderHealth() {
   lastHealth = Date.now();
   const out = $("#healthOut"); if (!out) return;
+  const hc = $("#histCount"); if (hc) hc.textContent = drives().length ? drives().length + " drive" + (drives().length === 1 ? "" : "s") : "";
   const evs = COMPONENTS.map(c => ({ c, e: evalComponent(c) }));
   const nBad = evs.filter(x => GR[x.e.grade].r >= 3).length, nWatch = evs.filter(x => x.e.grade === "watch").length, nKnown = evs.filter(x => x.e.grade !== "unknown").length;
   const dr = drives(), lvl = nBad ? "crit" : nWatch ? "warn" : "";
@@ -2095,6 +2104,81 @@ function trendSvg(s, cfg) {
   return th.map(t => `<line class="thr" x1="0" x2="${w}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}"/>`).join("") + `<polyline class="line" points="${pts}"/>` +
     v.map((x, i) => `<line class="dot" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${Y(x).toFixed(1)}" y2="${Y(x).toFixed(1)}"/>`).join("");
 }
+/* ---------- history across drives ---------- */
+// Every saved per-drive number, with its warning levels where the report card has them.
+const fMpg = v => units === "us" ? v.toFixed(1) + " mpg" : v.toFixed(1) + " L/100 km";
+const HM = [
+  { id: "mpg", group: "Trips", label: "Fuel economy", val: d => economy(d.km, d.fuelL), fmt: fMpg, note: () => units === "us" ? "Higher is better." : "Lower is better." },
+  { id: "km", group: "Trips", label: "Trip distance", val: d => d.km, fmt: v => tripDist(v) },
+  { id: "idlePct", group: "Trips", label: "Share of trip spent idling", val: d => d.idleSec != null && d.dur ? d.idleSec / d.dur * 100 : null, fmt: v => Math.round(v) + "%" },
+  { id: "cost", group: "Trips", label: "Fuel cost per trip", val: d => d.cost, fmt: v => tripMoney(v) },
+  { id: "ltft1", group: "Engine", label: "Long-term fuel trim at idle, bank 1", tr: "ltft1" },
+  { id: "ltft2", group: "Engine", label: "Long-term fuel trim at idle, bank 2", tr: "ltft2" },
+  { id: "mafIdle", group: "Engine", label: "Airflow at warm idle", tr: "mafIdle" },
+  { id: "rpmIdle", group: "Engine", label: "Warm idle speed", val: d => d.rpmIdle, fmt: v => Math.round(v) + " rpm" },
+  { id: "rpmSd", group: "Engine", label: "Idle steadiness", tr: "rpmSd" },
+  { id: "o2sd1", group: "Engine", label: "Downstream O2 swing, bank 1", tr: "o2sd1" },
+  { id: "o2sd2", group: "Engine", label: "Downstream O2 swing, bank 2", tr: "o2sd2" },
+  { id: "warmup", group: "Cooling", label: "Warm-up time from cold", tr: "warmup" },
+  { id: "maxEct", group: "Cooling", label: "Highest coolant temperature", tr: "maxEct" },
+  { id: "restV", group: "Battery and charging", label: "Battery voltage before starting", tr: "restV" },
+  { id: "crankV", group: "Battery and charging", label: "Lowest voltage while cranking", tr: "crankV" },
+  { id: "runV", group: "Battery and charging", label: "Charging voltage while driving", tr: "runV" }
+].map(m => m.tr ? { ...m, cfg: TR[m.tr], val: d => d[m.tr], fmt: TR[m.tr].fmt } : m);
+const HMAP = Object.fromEntries(HM.map(m => [m.id, m]));
+let histMetric = HMAP[store.get("histMetric", "mpg")] ? store.get("histMetric", "mpg") : "mpg";
+let histRange = String(store.get("histRange", "30"));
+function histSeries(m, days) {
+  const since = days > 0 ? Date.now() - days * 864e5 : 0;
+  return drives().filter(d => d.t >= since).map(d => ({ t: d.t, v: m.val(d) })).filter(x => x.v != null && isFinite(x.v));
+}
+// Level of one value against the report card's warning (0) and replace (1) limits.
+function histLevel(cfg, v) {
+  if (!cfg) return "";
+  const x = cfg.abs ? Math.abs(v) : v;
+  if ((cfg.hi && x >= cfg.hi[1]) || (cfg.lo && v <= cfg.lo[1])) return "crit";
+  if ((cfg.hi && x >= cfg.hi[0]) || (cfg.lo && v <= cfg.lo[0])) return "warn";
+  return "";
+}
+// Time on the x axis, so gaps between drives show as gaps.
+function histSvg(s, cfg) {
+  const w = 300, h = 140, v = s.map(x => x.v), th = [];
+  if (cfg && cfg.hi) { th.push(cfg.hi[0]); if (cfg.abs) th.push(-cfg.hi[0]); }
+  if (cfg && cfg.lo) th.push(cfg.lo[0]);
+  const near = th.filter(t => { const lo = Math.min(...v), hi = Math.max(...v), span = (hi - lo) || Math.abs(hi) || 1; return t > lo - span && t < hi + span; });
+  let lo = Math.min(...v, ...near), hi = Math.max(...v, ...near);
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * .12; lo -= pad; hi += pad;
+  const t0 = s[0].t, t1 = s[s.length - 1].t;
+  const X = t => t1 === t0 ? w / 2 : 6 + ((t - t0) / (t1 - t0)) * (w - 12), Y = x => h - ((x - lo) / (hi - lo)) * h;
+  return near.map(t => `<line class="thr" x1="0" x2="${w}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}"/>`).join("") +
+    (s.length > 1 ? `<polyline class="line" points="${s.map(x => X(x.t).toFixed(1) + "," + Y(x.v).toFixed(1)).join(" ")}"/>` : "") +
+    s.map(x => `<line class="dot ${histLevel(cfg, x.v)}" x1="${X(x.t).toFixed(1)}" x2="${X(x.t).toFixed(1)}" y1="${Y(x.v).toFixed(1)}" y2="${Y(x.v).toFixed(1)}"/>`).join("");
+}
+function renderHistory() {
+  const sel = $("#histMetric");
+  if (!sel.options.length) {
+    const groups = [...new Set(HM.map(m => m.group))];
+    sel.innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${HM.filter(m => m.group === g).map(m => `<option value="${m.id}">${esc(m.label)}</option>`).join("")}</optgroup>`).join("");
+  }
+  sel.value = histMetric;
+  document.querySelectorAll("#view-history [data-range]").forEach(b => b.setAttribute("aria-pressed", b.dataset.range === histRange));
+  const m = HMAP[histMetric], s = histSeries(m, +histRange), all = drives().length;
+  const out = $("#histOut");
+  if (!all) { out.innerHTML = `<div class="empty">No drives recorded yet. Drives longer than 2 minutes are saved while the app is connected.</div>`; return; }
+  if (!s.length) { out.innerHTML = `<div class="empty">${histSeries(m, 0).length ? "No drives with this reading in this date range. Try a longer range." : m.group === "Trips" ? "No trips with this number yet. Trips saved from version 2.5 on include distance and fuel." : "No drives have recorded this reading yet. Some readings need a warm idle, a cold start or steady cruising."}</div>`; return; }
+  const v = s.map(x => x.v), latest = v[v.length - 1], lvl = histLevel(m.cfg, latest);
+  const warnText = m.cfg ? [m.cfg.hi ? (m.cfg.abs ? "beyond ±" : "above ") + m.cfg.fmt(m.cfg.hi[0]).replace(/^[+±]/, "") : "", m.cfg.lo ? "below " + m.cfg.fmt(m.cfg.lo[0]) : ""].filter(Boolean).join(" or ") : "";
+  out.innerHTML = `<div class="panel stack" style="gap:10px">
+      <div class="row between"><b>${esc(m.label)}</b><span class="chip ${lvl || "ok"}" id="histLatest">${esc(m.fmt(latest))}</span></div>
+      <svg class="spark trend" style="height:140px" viewBox="0 0 300 140" preserveAspectRatio="none" aria-label="${esc(m.label)} over ${s.length} drives">${histSvg(s, m.cfg)}</svg>
+      <div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(s[0].t)}</span><span id="histN">${s.length} drive${s.length === 1 ? "" : "s"}</span><span>${dateShort(s[s.length - 1].t)}</span></div>
+      <dl class="kv"><dt>Latest</dt><dd>${esc(m.fmt(latest))}</dd><dt>Average</dt><dd>${esc(m.fmt(mean(v)))}</dd><dt>Lowest</dt><dd>${esc(m.fmt(Math.min(...v)))}</dd><dt>Highest</dt><dd>${esc(m.fmt(Math.max(...v)))}</dd></dl>
+      <p class="muted" style="font-size:.84rem" id="histNote">${esc(warnText ? `Dashed line is the warning level: ${warnText}. Amber and red dots are drives past the warning and replace levels.` : m.note ? m.note() : "")}</p>
+    </div>
+    <div class="group"><span class="label">Drives</span><div class="list" id="histList">${s.slice(-20).reverse().map(x => `<div class="item"><div class="body"><b>${esc(new Date(x.t).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }))}</b></div><span class="chip ${histLevel(m.cfg, x.v) || "na"}">${esc(m.fmt(x.v))}</span></div>`).join("")}</div>${s.length > 20 ? `<span class="muted" style="font-size:.84rem">Showing the latest 20 of ${s.length}.</span>` : ""}</div>`;
+}
+
 function openComponent(id) {
   const c = COMPONENTS.find(x => x.id === id), e = evalComponent(c), g = e.grade;
   const rec = {
@@ -2118,8 +2202,8 @@ function openComponent(id) {
 
 /* ---------- tabs & wiring ---------- */
 let current = "live", parentView = "live";
-const TAB_OF = { live: "live", readings: "live", health: "health", codes: "codes", more: "more", checks: "more", log: "more" };
-const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
+const TAB_OF = { live: "live", readings: "live", health: "health", history: "health", codes: "codes", more: "more", checks: "more", log: "more" };
+const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", history: "Drive history", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
 // Each screen change is a history entry ({ v, d: depth }), so back returns to the previous screen.
 // Tapping Home rewinds to the first entry; back on Home leaves the app.
 function show(v, fromHistory) {
@@ -2139,6 +2223,7 @@ function show(v, fromHistory) {
   if (v === "readings") buildReadings();
   if (v === "checks") renderChecks();
   if (v === "health") renderHealth();
+  if (v === "history") renderHistory();
   if (v === "more") { renderVehicle(); renderMonitors(); updateBadges(); }
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
@@ -2164,10 +2249,12 @@ document.addEventListener("click", e => {
   const t = e.target.closest ? e.target : null; if (!t) return;
   const gr = t.closest("[data-graph]"); if (gr) { openParam(gr.dataset.graph); return; }
   const k = t.closest("#homeTiles [data-k], #groups [data-k]"); if (k) { openParam(k.dataset.k); return; }
-  const go = t.closest("#homeRows [data-go], #view-more [data-go]"); if (go) { if (go.dataset.go === "trip") openTrip(); else show(go.dataset.go); return; }
+  const go = t.closest("#homeRows [data-go], #view-more [data-go], #view-health [data-go]"); if (go) { if (go.dataset.go === "trip") openTrip(); else show(go.dataset.go); return; }
   const gd = t.closest("#strip [data-g]"); if (gd) openGuide(gd.dataset.g);
 });
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => show(b.dataset.v));
+$("#histMetric").onchange = e => { histMetric = e.target.value; store.set("histMetric", histMetric); renderHistory(); };
+document.querySelectorAll("#view-history [data-range]").forEach(b => b.onclick = () => { histRange = b.dataset.range; store.set("histRange", histRange); renderHistory(); });
 $("#discBtn").onclick = () => disconnect("");
 $("#readBtn").onclick = readCodes;
 $("#clearBtn").onclick = () => {
