@@ -444,7 +444,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.4"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.5"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1309,6 +1309,7 @@ function renderStrip() {
     ["codes", "Trouble codes", codes == null ? "Not read yet" : String(codes), codes ? "warn" : "muted"],
     ["health", "Health", hs.label, hs.lvl || "muted"],
     ...(() => { const md = maintDue(); return md.label ? [["health", "Maintenance", md.label, md.lvl]] : []; })(),
+    ["trip", currentTrip() && !currentTrip().live ? "Last trip" : "This trip", tripRowText(), "muted"],
     ["readings", "All readings", String(liveParams().length), "muted"]
   ];
   const rh = rows.map(([go, l, v, c]) => `<button class="nrow" type="button" data-go="${go}"><span>${l}</span><span class="v ${c}">${esc(v)}</span></button>`).join("");
@@ -1687,6 +1688,86 @@ async function readMode06() {
   renderHealth(); renderStrip();
 }
 
+/* ---------- trip and fuel economy (estimated from airflow) ---------- */
+// Fuel burned = air / air-fuel ratio. Gasoline at the ideal mixture is 14.7 g of air per g of fuel,
+// and a liter of gasoline weighs about 745 g. Internally: km, liters, seconds.
+const STOICH = 14.7, GAS_G_PER_L = 745, L_PER_GAL = 3.78541, KM_PER_MI = 1.609344;
+const fuelGps = (maf, lambda) => maf > 0 ? maf / (STOICH * (lambda > 0.5 && lambda < 1.5 ? lambda : 1)) : 0;
+const newTrip = () => ({ sec: 0, km: 0, fuelL: 0, idleSec: 0, maf: false });
+function tripStep(t, smp, dt) {
+  if (!(dt > 0)) return t;
+  dt = Math.min(dt, 5);   // a gap in readings shouldn't count as minutes of driving
+  const sp = smp.speed > 0 ? smp.speed : 0;
+  t.sec += dt; t.km += sp * dt / 3600;
+  if (smp.maf != null) { t.maf = true; t.fuelL += fuelGps(smp.maf, smp.lambda) * dt / GAS_G_PER_L; }
+  if (sp < 2) t.idleSec += dt;
+  return t;
+}
+function fuelPricePerL() {
+  const fp = store.get("fuelPrice", null);
+  return fp && fp.v > 0 ? (fp.u === "gal" ? fp.v / L_PER_GAL : fp.v) : null;
+}
+const tripDist = km => units === "us" ? (km / KM_PER_MI).toFixed(1) + " mi" : km.toFixed(1) + " km";
+const tripFuel = l => units === "us" ? (l / L_PER_GAL).toFixed(2) + " gal" : l.toFixed(2) + " L";
+// Fuel economy needs a little distance to mean anything.
+function economy(km, l) {
+  if (!(km >= 0.3) || !(l > 0)) return null;
+  return units === "us" ? (km / KM_PER_MI) / (l / L_PER_GAL) : l / km * 100;
+}
+const econText = (km, l) => { const e = economy(km, l); return e == null ? "—" : units === "us" ? e.toFixed(1) + " mpg" : e.toFixed(1) + " L/100 km"; };
+const tripMoney = v => v == null ? "—" : "$" + v.toFixed(2);
+const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min"; };
+// The trip in progress, or the last one this session.
+function currentTrip() {
+  if (state.drive && state.drive.trip) return { live: true, ...state.drive.trip };
+  if (state.lastTrip) return { live: false, ...state.lastTrip };
+  return null;
+}
+function tripRowText() {
+  const t = currentTrip();
+  if (!t) return state.elm ? "Starts when the engine runs" : "—";
+  const e = economy(t.km, t.fuelL);
+  return tripDist(t.km) + (e != null ? " · " + econText(t.km, t.fuelL) : "");
+}
+function tripStatsHtml() {
+  const t = currentTrip(), ppl = fuelPricePerL();
+  if (!t) return `<div class="empty">${state.elm ? "The trip starts when the engine is running." : "Connect to the van to track a trip."}</div>`;
+  const rate = V.maf != null && V.rpm > 400 ? fuelGps(V.maf, V.lambda) * 3600 / GAS_G_PER_L : null;
+  const rows = [
+    ["Distance", tripDist(t.km)],
+    ["Fuel used", t.maf ? tripFuel(t.fuelL) : "Not available (no airflow reading)"],
+    ["Fuel economy", t.maf ? econText(t.km, t.fuelL) : "—"],
+    ["Cost", t.maf && ppl ? tripMoney(t.fuelL * ppl) : ppl ? "—" : "Set a fuel price below"],
+    ["Driving time", durText(t.sec)],
+    ["Idle time", durText(t.idleSec) + (t.sec > 60 ? ` (${Math.round(t.idleSec / t.sec * 100)}%)` : "")],
+    ...(t.live && rate != null ? [["Burning now", units === "us" ? (rate / L_PER_GAL).toFixed(2) + " gal/h" : rate.toFixed(2) + " L/h"]] : [])
+  ];
+  return `<dl class="kv" id="tripKv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+}
+function recentTripsHtml() {
+  const ds = drives().filter(d => d.km != null).slice(-8).reverse();
+  if (!ds.length) return `<div class="empty">Trips longer than 2 minutes are saved here.</div>`;
+  return `<div class="list" id="tripList">${ds.map(d => `<div class="item"><div class="body"><b>${esc(dateShort(d.t))}</b><span class="muted" style="font-size:.84rem">${esc(tripDist(d.km))} · ${esc(durText(d.dur))}</span></div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(econText(d.km, d.fuelL))}</b><br><span class="muted" style="font-size:.8rem">${esc(d.cost != null ? tripMoney(d.cost) : tripFuel(d.fuelL || 0))}</span></div></div>`).join("")}</div>`;
+}
+function openTrip() {
+  const fp = store.get("fuelPrice", null), unit = units === "us" ? "gal" : "L";
+  const shown = fp && fp.v > 0 ? (fp.u === unit ? fp.v : fp.u === "gal" ? fp.v / L_PER_GAL : fp.v * L_PER_GAL) : null;
+  openSheet(`<header><div class="t"><span class="label">Estimated from airflow</span><h2 id="tripTitle">${currentTrip() && !currentTrip().live ? "Last trip" : "This trip"}</h2></div><button class="close" aria-label="Close">×</button></header>
+    <div class="block" id="tripStats">${tripStatsHtml()}</div>
+    <div class="block stack" style="gap:8px">
+      <label class="flabel">Fuel price ($ per ${unit === "gal" ? "gallon" : "liter"})<input class="inp" id="fuelPrice" inputmode="decimal" placeholder="${unit === "gal" ? "3.49" : "0.92"}" value="${shown != null ? esc(shown.toFixed(unit === "gal" ? 2 : 3)) : ""}"></label>
+      <span class="muted" style="font-size:.84rem">Used to work out what each trip cost. Saved with every trip from now on.</span>
+    </div>
+    <div class="group"><span class="label">Recent trips</span><div id="tripRecent">${recentTripsHtml()}</div></div>
+    <p class="muted" style="font-size:.84rem">Fuel is estimated from the airflow sensor, assuming regular gasoline at the ideal mixture. Expect it to be within about 10% of what the pump says; compare with a fill-up to see how close it is for your van. Idle time counts any time the van is stopped with the engine running.</p>`,
+    () => { $("#tripStats").innerHTML = tripStatsHtml(); const t = currentTrip(); $("#tripTitle").textContent = t && !t.live ? "Last trip" : "This trip"; });
+  $("#fuelPrice").oninput = e => {
+    const v = parseFloat(e.target.value.replace(/[^\d.]/g, ""));
+    store.set("fuelPrice", v > 0 ? { v, u: unit } : null);
+    $("#tripStats").innerHTML = tripStatsHtml();
+  };
+}
+
 /* ---------- health: drive history ---------- */
 let demoDrives = [], driveCache = null;
 const drives = () => state.mode === "demo" ? demoDrives : (driveCache = driveCache || store.get("drives", []));
@@ -1706,17 +1787,19 @@ function trackDrive() {
   if (!running) {
     if (V.batt != null) { state.offV = (state.offV || []).filter(x => now - x[0] < 90000); state.offV.push([now, V.batt]); }
     const d = state.drive;
-    if (d) { d.offSince = d.offSince || now; if (now - d.offSince > 20000) endDrive(); }
+    if (d) { d.lastT = null; d.offSince = d.offSince || now; if (now - d.offSince > 20000) endDrive(); }
     return;
   }
   if (!state.drive) {
     const off = state.offV || [];
     const rest = off.filter(x => now - x[0] > 8000).map(x => x[1]), crank = off.filter(x => now - x[0] <= 8000).map(x => x[1]);
     state.drive = { start: now, ectStart: V.ect, preV: rest.length ? median(rest) : null, crankMin: crank.length ? Math.min(...crank) : null,
-      idle: { ltft1: [], ltft2: [], stft1: [], stft2: [], maf: [], rpm: [] }, run: [], c1: [], c2: [], warmup: null, maxEct: null };
+      idle: { ltft1: [], ltft2: [], stft1: [], stft2: [], maf: [], rpm: [] }, run: [], c1: [], c2: [], warmup: null, maxEct: null, trip: newTrip(), lastT: null };
     state.offV = [];
   }
   const d = state.drive; d.offSince = null;
+  tripStep(d.trip, { maf: V.maf, lambda: V.lambda, speed: V.speed }, d.lastT ? (now - d.lastT) / 1000 : 0);
+  d.lastT = now;
   const rt = (now - d.start) / 1000;
   if (d.warmup == null && d.ectStart != null && d.ectStart < 40 && V.ect >= 80) d.warmup = rt;
   if (V.ect != null) d.maxEct = d.maxEct == null ? V.ect : Math.max(d.maxEct, V.ect);
@@ -1734,21 +1817,24 @@ function misfireSnapshot() {
 function endDrive() {
   const d = state.drive; state.drive = null;
   if (!d) return;
+  state.lastTrip = d.trip;
   const dur = (Date.now() - d.start) / 1000;
   if (dur < 120) return;
+  const ppl = fuelPricePerL(), t = d.trip;
   const im = k => d.idle[k].length >= 20 ? mean(d.idle[k]) : null;
   saveDrive({ t: d.start, dur: Math.round(dur),
     ltft1: rnd(im("ltft1"), 1), ltft2: rnd(im("ltft2"), 1), stft1: rnd(im("stft1"), 1), stft2: rnd(im("stft2"), 1),
     mafIdle: rnd(im("maf"), 2), rpmIdle: rnd(im("rpm"), 0), rpmSd: d.idle.rpm.length >= 20 ? rnd(stdev(d.idle.rpm), 1) : null,
     restV: rnd(d.preV, 2), crankV: rnd(d.crankMin, 2), runV: rnd(mean(d.run), 2), warmup: rnd(d.warmup, 0), maxEct: rnd(d.maxEct, 1),
-    o2sd1: rnd(stdev(d.c1), 3), o2sd2: rnd(stdev(d.c2), 3), mis: misfireSnapshot() });
+    o2sd1: rnd(stdev(d.c1), 3), o2sd2: rnd(stdev(d.c2), 3), mis: misfireSnapshot(),
+    km: rnd(t.km, 2), fuelL: t.maf ? rnd(t.fuelL, 3) : null, idleSec: Math.round(t.idleSec), cost: t.maf && ppl ? rnd(t.fuelL * ppl, 2) : null });
   renderHealth();
 }
 function seedDemoDrives() {
   const out = [], now = Date.now(), j = a => (Math.random() - .5) * 2 * a;
   for (let i = 0; i < 14; i++) {
-    const k = i / 13;
-    out.push({ t: now - (14 - i) * 2 * 864e5 - 3 * 36e5, dur: 900 + Math.round(Math.random() * 1500),
+    const k = i / 13, dur = 900 + Math.round(Math.random() * 1500), km = rnd(dur / 3600 * (38 + j(10)), 2), mpg = 20.5 + j(2.5), fuelL = rnd(km / KM_PER_MI / mpg * L_PER_GAL, 3);
+    out.push({ km, fuelL, idleSec: Math.round(dur * (.12 + j(.05))), cost: rnd(fuelL / L_PER_GAL * 3.49, 2), t: now - (14 - i) * 2 * 864e5 - 3 * 36e5, dur,
       ltft1: rnd(1.4 + j(.6), 1), ltft2: rnd(5.5 + 7.8 * k + j(.5), 1), stft1: rnd(j(1), 1), stft2: rnd(2 + j(1), 1),
       mafIdle: rnd(3.8 - .2 * k + j(.05), 2), rpmIdle: Math.round(690 + j(8)), rpmSd: rnd(12 + j(3), 1),
       restV: rnd(12.62 - .24 * k + j(.02), 2), crankV: rnd(10.6 - .5 * k + j(.05), 2), runV: rnd(14.1 + j(.06), 2),
@@ -2078,7 +2164,7 @@ document.addEventListener("click", e => {
   const t = e.target.closest ? e.target : null; if (!t) return;
   const gr = t.closest("[data-graph]"); if (gr) { openParam(gr.dataset.graph); return; }
   const k = t.closest("#homeTiles [data-k], #groups [data-k]"); if (k) { openParam(k.dataset.k); return; }
-  const go = t.closest("#homeRows [data-go], #view-more [data-go]"); if (go) { show(go.dataset.go); return; }
+  const go = t.closest("#homeRows [data-go], #view-more [data-go]"); if (go) { if (go.dataset.go === "trip") openTrip(); else show(go.dataset.go); return; }
   const gd = t.closest("#strip [data-g]"); if (gd) openGuide(gd.dataset.g);
 });
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => show(b.dataset.v));

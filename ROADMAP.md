@@ -14,7 +14,7 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [x] Freeze-frame data (mode 02): the exact conditions at the moment each code set. ([#5](https://github.com/KrunalSanghavi/myvan-assistant/issues/5))
 - [x] Spoken alerts while driving, such as "Coolant running hot." ([#6](https://github.com/KrunalSanghavi/myvan-assistant/issues/6))
 - [ ] Recall and service bulletin lookup by VIN, using NHTSA's free recall data. ([#7](https://github.com/KrunalSanghavi/myvan-assistant/issues/7))
-- [ ] Trip and fuel economy: MPG estimated from airflow and speed, cost per trip, idle time. ([#8](https://github.com/KrunalSanghavi/myvan-assistant/issues/8))
+- [x] Trip and fuel economy: MPG estimated from airflow and speed, cost per trip, idle time. ([#8](https://github.com/KrunalSanghavi/myvan-assistant/issues/8))
 - [x] Maintenance Minder companion: log each service with date, mileage and cost, with reminders when parts come due. ([#9](https://github.com/KrunalSanghavi/myvan-assistant/issues/9))
 - [ ] Shareable health report page for a mechanic or a sale listing. ([#10](https://github.com/KrunalSanghavi/myvan-assistant/issues/10))
 - [ ] A history screen comparing any reading across drives. ([#11](https://github.com/KrunalSanghavi/myvan-assistant/issues/11))

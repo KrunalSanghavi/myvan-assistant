@@ -12,6 +12,7 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
   - the engine computer's own self-test results (OBD-II mode 06), measured against Honda's pass/fail limits
   - trends across your recorded drives: fuel trims, warm-up time, battery and cranking voltage, airflow, idle steadiness, downstream O2 activity and misfire counts per cylinder
   - the part ages you enter
+- **Trip and fuel economy:** distance, fuel used, mpg, idle time and cost for the drive in progress, estimated from the airflow sensor. Set your fuel price once and each saved trip records what it cost.
 - **Early warnings:** spots slow changes, such as a battery weakening or a cylinder starting to misfire, before a trouble code or warning light appears.
 - **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
 - **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, units, appearance and help.
