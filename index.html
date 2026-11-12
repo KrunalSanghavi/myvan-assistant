@@ -2599,12 +2599,19 @@ async function geminiPickModel(key) {
   if (list) { const c = aiCfg(); c.geminiList = list.slice(0, 40); aiSave(c); }
   return geminiBest(list);
 }
-async function aiAsk(q, retried) {
-  const p = aiProv(), P = AI[p];
+// Another Gemini model to try when the chosen one is busy: a standard Flash first, then any other the key can use.
+async function geminiAlt(key, cur) {
+  let list = aiCfg().geminiList;
+  if (!list || !list.length) { try { list = await geminiModels(key); } catch {} }
+  const rest = (list || []).filter(n => n !== cur);
+  return rest.find(n => /flash/.test(n) && !/lite|preview|exp|thinking/.test(n)) || rest.find(n => /flash/.test(n)) || rest[0] || null;
+}
+async function aiAsk(q, retried, useModel) {
+  const p = aiProv(), P = AI[p], model = useModel || aiModel(p);
   if (state.mode === "demo") { await sleep(400); return { who: P.name + " (demo)", text: `Demo van: this is a sample answer. With your own ${P.name} key, the answer to "${q}" would appear here, written from your van's data.\n\n- It uses only the facts the app has worked out.\n- It never sees your VIN.\n\nThis is guidance, not a guarantee.` }; }
   const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
   try {
-    const [url, opt] = P.req(aiKey(p), aiModel(p), AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
+    const [url, opt] = P.req(aiKey(p), model, AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
     let r;
     try { r = await fetch(url, { ...opt, signal: ctl.signal }); }
     catch (err) {
@@ -2616,21 +2623,29 @@ async function aiAsk(q, retried) {
     const body = await r.text(), j = (() => { try { return JSON.parse(body); } catch { return {}; } })();
     if (!r.ok) {
       const msg = (j.error && (j.error.message || j.error.status)) || "";
-      if (r.status === 429) throw new Error(`${P.name}'s usage limit was reached. Try again later, or search Google below.`);
-      if (r.status === 401 || r.status === 403 || /api.?key/i.test(msg)) throw new Error(`${P.name} didn't accept the key. Check it under More → AI answers.`);
       const detail = msg ? ` (${P.name} said: ${String(msg).slice(0, 160)})` : "";
-      if (r.status === 404 || /model/i.test(msg)) {
+      // Busy: a temporary overload, not a bad setting. Gemini tries another model once; the saved model stays.
+      if ([500, 502, 503, 504, 529].includes(r.status) || /high demand|overloaded|unavailable|try again later/i.test(msg)) {
+        if (p === "gemini" && !retried) {
+          const m2 = await geminiAlt(aiKey(p), model);
+          if (m2) { clearTimeout(tm); const a = await aiAsk(q, true, m2); return { ...a, note: `${model} was busy, so this answer came from ${m2}.` }; }
+        }
+        throw new Error(`${P.name} is busy right now (${model}). This is usually over in a few minutes. Try again soon, or search Google below.${detail}`);
+      }
+      if (r.status === 429) throw new Error(`${P.name}'s usage limit was reached. Try again later, or search Google below.${detail}`);
+      if (r.status === 401 || r.status === 403 || /api.?key/i.test(msg)) throw new Error(`${P.name} didn't accept the key. Check it under More → AI answers.`);
+      if (r.status === 404 || /model.*(not found|not supported|does not exist|unknown)|(unknown|invalid) model/i.test(msg)) {
         if (p === "gemini" && !retried) {
           let m2 = null; try { m2 = await geminiPickModel(aiKey(p)); } catch {}
-          if (m2 && m2 !== aiModel(p)) { const c = aiCfg(); c.models = c.models || {}; c.models[p] = m2; aiSave(c); clearTimeout(tm); const a = await aiAsk(q, true); return { ...a, note: `Gemini didn't recognise the old model name, so the app switched to ${m2}.` }; }
+          if (m2 && m2 !== model) { const c = aiCfg(); c.models = c.models || {}; c.models[p] = m2; aiSave(c); clearTimeout(tm); const a = await aiAsk(q, true); return { ...a, note: `Gemini didn't recognise the old model name, so the app switched to ${m2}.` }; }
         }
-        throw new Error(`${P.name} doesn't recognise the model "${aiModel(p)}". Change it under More → AI answers.${detail}`);
+        throw new Error(`${P.name} doesn't recognise the model "${model}". Change it under More → AI answers.${detail}`);
       }
       throw new Error(`${P.name} couldn't answer right now (error ${r.status}). Try again later, or search Google below.${detail}`);
     }
     const text = P.text(j).trim();
     if (!text) throw new Error(`${P.name} didn't give an answer to that question. Try wording it differently, or search Google below.`);
-    return { who: `${P.name} · ${aiModel(p)}`, text };
+    return { who: `${P.name} · ${model}`, text };
   } finally { clearTimeout(tm); }
 }
 // Simple formatting for AI answers: paragraphs, bullet lists and **bold**. Everything is escaped first.
