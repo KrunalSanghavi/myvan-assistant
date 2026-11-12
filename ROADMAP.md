@@ -18,7 +18,7 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [x] Maintenance Minder companion: log each service with date, mileage and cost, with reminders when parts come due. ([#9](https://github.com/KrunalSanghavi/myvan-assistant/issues/9))
 - [x] Shareable health report page for a mechanic or a sale listing. ([#10](https://github.com/KrunalSanghavi/myvan-assistant/issues/10))
 - [x] A history screen comparing any reading across drives. ([#11](https://github.com/KrunalSanghavi/myvan-assistant/issues/11))
-- [ ] "Ask about my van": plain-English questions answered from your data using an AI model. ([#12](https://github.com/KrunalSanghavi/myvan-assistant/issues/12))
+- [x] "Ask about my van": plain-English questions answered from your data using an AI model. ([#12](https://github.com/KrunalSanghavi/myvan-assistant/issues/12))
 
 ## Later: deeper coverage (v3)
 - [ ] Honda-specific data where the adapter allows it: transmission fluid temperature, cylinder deactivation (VCM) status, knock retard per cylinder. ([#13](https://github.com/KrunalSanghavi/myvan-assistant/issues/13))

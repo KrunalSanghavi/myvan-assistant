@@ -119,7 +119,7 @@ test("a passphrase locks the cloud copy; a wrong one is caught and nothing is ov
   await signIn(page);
   await page.getByText("Passphrase (optional)").click();
   await page.getByLabel("Sync passphrase").fill("blue van 42");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.locator("#syncPassForm").getByRole("button", { name: "Save" }).click();
   await expect(page.locator("#syncWhen")).toContainText("locked with a passphrase");
   await expect.poll(() => cloud.text).toContain('"enc"');
   expect(cloud.text).not.toContain("secret note text");
@@ -130,14 +130,14 @@ test("a passphrase locks the cloud copy; a wrong one is caught and nothing is ov
   await signIn(B.page);
   await expect(msg(B.page)).toContainText("locked with a passphrase");
   await B.page.getByLabel("Sync passphrase").fill("wrong one");
-  await B.page.getByRole("button", { name: "Save" }).click();
+  await B.page.locator("#syncPassForm").getByRole("button", { name: "Save" }).click();
   await expect(msg(B.page)).toContainText("doesn't unlock");
   await expect(B.page.getByRole("button", { name: /Replace the Google Drive copy/ })).toBeVisible();
   expect(cloud.text).toBe(locked);
   expect((await readStorage(B.page))["note:P0171"]).toBeUndefined();
 
   await B.page.getByLabel("Sync passphrase").fill("blue van 42");
-  await B.page.getByRole("button", { name: "Change" }).click();
+  await B.page.locator("#syncPassForm").getByRole("button", { name: "Change" }).click();
   await expect(B.page.locator("#syncWhen")).toContainText("locked with a passphrase");
   await expect.poll(async () => (await readStorage(B.page))["note:P0171"]).toBe("secret note text");
   await expect(msg(B.page)).toHaveCount(0);

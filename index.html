@@ -344,7 +344,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
   <section class="view" id="view-health" hidden>
     <p class="muted" style="font-size:.9rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p>
     <div id="healthOut" class="stack"></div>
-    <div class="rows"><button class="nrow" type="button" data-go="history"><span>History across drives</span><span class="v muted" id="histCount"></span></button>
+    <div class="rows"><button class="nrow" type="button" data-go="ask"><span>Ask about my van</span><span class="v muted">Battery, oil, codes…</span></button>
+      <button class="nrow" type="button" data-go="history"><span>History across drives</span><span class="v muted" id="histCount"></span></button>
       <button class="nrow" type="button" data-go="report"><span>Health report to share</span><span class="v muted">Print, PDF, email</span></button></div>
     <div class="group"><span class="label">Parts age and maintenance</span><div class="panel stack" id="maintOut" style="gap:12px"></div></div>
     <p class="muted" style="font-size:.84rem;max-width:68ch">Grades are estimates to help you plan, not a guarantee. Self-test limits come from the engine computer itself. Trend warnings get more reliable after a couple of weeks of normal driving. Confirm with the troubleshooting steps or a mechanic before buying parts.</p>
@@ -369,6 +370,14 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
       <p class="muted" id="repMsg" role="status" style="font-size:.86rem"></p>
     </div>
     <article class="report" id="reportDoc"></article>
+  </section>
+
+  <!-- ASK ABOUT MY VAN (from Home, Health or More) -->
+  <section class="view" id="view-ask" hidden>
+    <form class="lookup" id="askForm"><input id="askIn" aria-label="Your question" placeholder="Ask about your van" autocomplete="off" enterkeyhint="send" style="max-width:none;text-transform:none;font-family:inherit"><button class="btn primary" type="submit" id="askBtn">Ask</button></form>
+    <div id="askOut" class="stack" role="status" aria-live="polite"></div>
+    <div class="row" id="askChips" style="gap:6px"></div>
+    <p class="muted" id="askFoot" style="font-size:.82rem"></p>
   </section>
 
   <!-- CODES -->
@@ -407,6 +416,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
       <button class="btn small" id="goConnect" type="button">Connect</button>
     </div>
     <button class="btn primary" id="installBtn" type="button" hidden>Install MyVan on this device</button>
+    <div class="rows"><button class="nrow" type="button" data-go="ask"><span>Ask about my van</span><span class="v muted">Questions in plain English</span></button></div>
     <div class="group"><span class="label">Vehicle</span><div class="panel"><dl class="kv" id="vehKv"></dl></div></div>
     <div class="group"><span class="label">Recalls</span>
       <div class="panel stack" style="gap:10px">
@@ -432,6 +442,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
       <div class="row"><button class="btn" id="backupBtn" type="button">Back up to a file</button><button class="btn" id="restoreBtn" type="button">Restore from a file</button><input type="file" id="restoreIn" accept=".json,application/json" hidden aria-label="Backup file"></div>
       <div id="backupMsg" role="status"></div>
     </div>
+    <div class="group"><span class="label">AI answers</span>
+      <div class="panel stack" style="gap:10px" id="aiSet"></div></div>
     <div class="group"><span class="label">Cloud sync</span>
       <div class="panel stack" style="gap:10px">
         <div class="stack" id="syncOut" style="gap:10px"></div>
@@ -494,7 +506,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.9"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.10"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1361,6 +1373,7 @@ function renderStrip() {
     ["health", "Health", hs.label, hs.lvl || "muted"],
     ...(() => { const md = maintDue(); return md.label ? [["health", "Maintenance", md.label, md.lvl]] : []; })(),
     ["trip", currentTrip() && !currentTrip().live ? "Last trip" : "This trip", tripRowText(), "muted"],
+    ["ask", "Ask about my van", "", "muted"],
     ["readings", "All readings", String(liveParams().length), "muted"]
   ];
   const rh = rows.map(([go, l, v, c]) => `<button class="nrow" type="button" data-go="${go}"><span>${l}</span><span class="v ${c}">${esc(v)}</span></button>`).join("");
@@ -2417,6 +2430,255 @@ function renderReport() {
   };
 }
 
+/* ---------- ask about my van: built-in answers first, an AI provider only for the rest ---------- */
+// Each built-in answer works from data already on the device. It returns { title, lines } in plain text,
+// so the same sentences can be shown on screen or used as facts for an AI answer.
+const VAN_NAME = "2018 Honda Odyssey Elite";
+const PART_KW = { oil: /\boil\b/, airfilter: /air filter|engine filter|\bfilter\b/, plugs: /plug/, belt: /timing|belt|water pump/, coolant: /coolant|antifreeze/, atf: /transmission fluid|\batf\b|trans(mission)? fluid/, brakefluid: /brake fluid/, o2: /\bo2\b|oxygen|air.fuel sensor/ };
+const fmtDay = d => new Date(d.length === 10 ? d + "T12:00" : d).toLocaleDateString([], { dateStyle: "medium" });
+const pickPart = q => Object.keys(PART_KW).find(id => PART_KW[id].test(q));
+function askMaint(q) {
+  const part = pickPart(q), m = maintData(), odo = num0(m.odo);
+  if (part) {
+    const it = MAINT.find(x => x.id === part), d = m.items[part] || {}, st = maintStatus(part), lines = [];
+    if (!st) return { title: it.name, lines: [`There's no date or mileage for the last ${it.name.toLowerCase()} service yet.`, "Log it under Health → Maintenance (Log a service) and the app will track when it's next due."] };
+    lines.push(st.msg);
+    lines.push(`Last done ${[d.lastDate ? fmtDay(d.lastDate) : "", num0(d.lastMi) != null ? "at " + (+d.lastMi).toLocaleString() + " mi" : ""].filter(Boolean).join(" ")}.`);
+    const mi = num0(d.mi ?? it.mi), yr = num0(d.yr ?? it.yr), next = [];
+    if (mi && num0(d.lastMi) != null && odo != null) { const left = +d.lastMi + mi - odo; next.push(left > 0 ? `in about ${Math.round(left).toLocaleString()} miles` : `${Math.round(-left).toLocaleString()} miles ago`); }
+    if (yr && d.lastDate) { const due = new Date(new Date(d.lastDate + "T12:00").getTime() + yr * 3.156e10); next.push((due > new Date() ? "by " : "since ") + due.toLocaleDateString([], { month: "long", year: "numeric" })); }
+    if (next.length) lines.push(st.grade === "plan" ? `It was due ${next.join(", or ")}.` : `Next one due ${next.join(", or ")}, whichever comes first.`);
+    return { title: it.name, lines };
+  }
+  const md = maintDue(), known = MAINT.map(it => ({ it, st: maintStatus(it.id) })).filter(x => x.st);
+  if (!known.length) return { title: "Maintenance", lines: ["No part ages are set yet.", "Log services under Health → Maintenance, and the app will tell you what's due and when."] };
+  const lines = [];
+  if (md.due.length) lines.push(`Due now: ${md.due.join(", ")}.`);
+  if (md.soon.length) lines.push(`Due soon: ${md.soon.join(", ")}.`);
+  if (!md.due.length && !md.soon.length) { const n = known.sort((a, b) => b.st.frac - a.st.frac)[0]; lines.push(`Nothing is due. Next up is ${n.it.name.toLowerCase()}, at ${Math.round(n.st.frac * 100)}% of its interval.`); }
+  const unset = MAINT.length - known.length;
+  if (unset) lines.push(`${unset} part${unset === 1 ? " has" : "s have"} no service date yet, so ${unset === 1 ? "it isn't" : "they aren't"} counted.`);
+  return { title: "Maintenance", lines };
+}
+function askSpend() {
+  const list = services(); if (!list.length) return { title: "Maintenance spending", lines: ["No services are logged yet. Add them under Health → Maintenance, with the cost, to see totals here."] };
+  const yr = String(new Date().getFullYear()), sum = l => l.reduce((a, e) => a + (num0(e.cost) || 0), 0);
+  const thisYr = list.filter(e => (e.date || "").startsWith(yr)), big = [...list].sort((a, b) => (num0(b.cost) || 0) - (num0(a.cost) || 0))[0];
+  return { title: "Maintenance spending", lines: [`This year: ${money(sum(thisYr)) || "$0.00"} over ${plural(thisYr.length, "service")}.`, `All time: ${money(sum(list)) || "$0.00"} over ${plural(list.length, "service")}.`, ...(num0(big.cost) ? [`The biggest was ${partName(big.part).toLowerCase()} on ${big.date ? fmtDay(big.date) : "an unknown date"}, ${money(big.cost)}.`] : [])] };
+}
+function askBattery() {
+  const b = COMPONENTS.find(c => c.id === "batt"), ch = COMPONENTS.find(c => c.id === "chg"), eb = evalComponent(b), ec = evalComponent(ch);
+  const ds = drives().filter(d => d.restV != null || d.crankV != null || d.runV != null).slice(-10);
+  if (!ds.length) return { title: "Battery and charging", lines: ["No drives with battery readings yet.", "Connect to the van and drive. Each drive records the battery's resting, cranking and running voltage."] };
+  const avg = k => { const v = ds.map(d => d[k]).filter(x => x != null); return v.length ? mean(v) : null; }, rest = avg("restV"), crank = avg("crankV"), run = avg("runV");
+  const lines = [`Battery: ${gradeText(b, eb.grade)}. Charging: ${gradeText(ch, ec.grade)}.`];
+  if (rest != null) lines.push(`Before starting, it averaged ${rest.toFixed(2)} V over your last ${plural(ds.length, "drive")}. Healthy is about 12.4 V or more.`);
+  if (crank != null) lines.push(`While cranking, it dipped to ${crank.toFixed(2)} V on average. A strong battery stays above about 9.6 V.`);
+  if (run != null) lines.push(`With the engine running, it read ${run.toFixed(2)} V. About 13.5–14.8 V means the alternator is charging.`);
+  lines.push(...eb.why, ...ec.why);
+  if (GR[eb.grade].r >= 2 || GR[ec.grade].r >= 2) lines.push("Most parts stores test batteries and charging systems for free.");
+  return { title: "Battery and charging", lines };
+}
+function askFuel() {
+  const ds = drives().filter(d => d.km != null && d.fuelL > 0);
+  if (!ds.length) return { title: "Fuel economy", lines: ["No trips with fuel data yet. Drive with the van connected; each trip records distance and estimated fuel used."] };
+  const last = ds.slice(-10), km = last.reduce((a, d) => a + d.km, 0), l = last.reduce((a, d) => a + d.fuelL, 0), t = ds[ds.length - 1];
+  const lines = [`Over your last ${plural(last.length, "trip")}: ${econText(km, l)}.`, `Most recent trip (${fmtDay(new Date(t.t).toISOString())}): ${econText(t.km, t.fuelL)}${t.cost != null ? ", costing about " + money(t.cost) : ""}.`];
+  const idle = last.reduce((a, d) => a + (d.idleSec || 0), 0), dur = last.reduce((a, d) => a + (d.dur || 0), 0);
+  if (dur) lines.push(`About ${Math.round(idle / dur * 100)}% of driving time was spent idling.`);
+  lines.push("These are estimates from the airflow sensor, usually within about 10% of the real figure.");
+  return { title: "Fuel economy", lines };
+}
+function askCodes(q) {
+  const m = /\b([pcbu][0-9a-f]{4})\b/i.exec(q), c = state.codes;
+  if (m) {
+    const code = m[1].toUpperCase(), g = guideFor(code), now = c && [...c.stored, ...c.pending, ...c.permanent].includes(code);
+    return { title: code, lines: [`${code}: ${g.t}.`, g.what, `Advice: ${SEV[g.sev]}.`, ...(g.steps ? ["First steps: " + g.steps.slice(0, 2).join(" ")] : []), c ? (now ? "Your van has this code right now." : "Your van doesn't have this code right now.") : "Connect and read codes to see whether your van has it."] };
+  }
+  if (!c) return { title: "Check-engine light and codes", lines: ["Codes haven't been read yet. Connect to the van, then ask again (or open the Codes tab)."] };
+  const all = [...c.stored.map(x => [x, "stored"]), ...c.pending.map(x => [x, "pending"]), ...c.permanent.map(x => [x, "permanent"])];
+  if (!all.length) return { title: "Check-engine light and codes", lines: [`No trouble codes. The check-engine light is ${state.mil ? "on" : "off"}.`] };
+  return { title: "Check-engine light and codes", lines: [`The check-engine light is ${state.mil ? "on" : "off"}. ${plural(all.length, "code")} found:`, ...all.map(([x, k]) => { const g = guideFor(x); return `${x} (${k}): ${g.t}. ${SEV[g.sev]}.`; }), "Tap a code on the Codes tab for step-by-step troubleshooting."] };
+}
+function askHealth() {
+  const evs = COMPONENTS.map(c => ({ c, e: evalComponent(c) })), known = evs.filter(x => x.e.grade !== "unknown");
+  if (!known.length) return { title: "Overall health", lines: ["There's no health data yet. Connect, check the self-tests on the Health tab, and drive a few times."] };
+  const bad = evs.filter(x => GR[x.e.grade].r >= 3), watch = evs.filter(x => x.e.grade === "watch");
+  const lines = [bad.length ? `${plural(bad.length, "part")} need${bad.length === 1 ? "s" : ""} attention: ${bad.map(x => x.c.name.toLowerCase()).join(", ")}.` : watch.length ? `${plural(watch.length, "part")} to keep an eye on: ${watch.map(x => x.c.name.toLowerCase()).join(", ")}.` : `Everything graded looks healthy (${known.length} of ${evs.length} parts graded).`];
+  for (const x of [...bad, ...watch].slice(0, 3)) if (x.e.why[0]) lines.push(x.e.why[0]);
+  return { title: "Overall health", lines };
+}
+function askRecalls() {
+  const rc = recallCache();
+  if (!rc) return { title: "Recalls", lines: ["Recalls haven't been checked yet. Go to More → Recalls and tap Check recalls."] };
+  const n = rc.items.length, park = rc.items.filter(r => r.parkIt || r.parkOutSide);
+  return { title: "Recalls", lines: [n ? `${plural(n, "recall")} listed for the ${vehicleName(rc)} (checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}).` : "No recalls are listed for this model and year.", ...rc.items.slice(0, 3).map(r => `${titleCase(r.component.split(":").pop() || "Recall")} (${recallDate(r)}).`), ...(park.length ? ["One or more say to park outside or not drive until repaired. Check whether yours has been fixed."] : []), ...(n ? ["Recall repairs are free at a Honda dealer. Check which are still open for your VIN at nhtsa.gov/recalls."] : [])] };
+}
+function askReady() {
+  if (!state.monitors) return { title: "Emissions readiness", lines: ["Readiness hasn't been read yet. Connect to the van, then check More → Readiness monitors."] };
+  const notReady = state.monitors.filter(m => m.avail && !m.done).map(m => m.n);
+  return { title: "Emissions readiness", lines: notReady.length ? [`Not ready yet: ${notReady.join(", ")}.`, "These finish over a few days of normal driving, including some highway driving. Many states fail an emissions test with more than one not ready."] : ["All supported monitors are ready. The van is set for an emissions test, as long as the check-engine light is off."] };
+}
+function askMisfire() {
+  const c = COMPONENTS.find(x => x.id === "ign"), e = evalComponent(c), codes = state.codes ? [...state.codes.stored, ...state.codes.pending].filter(x => /^P030\d$/.test(x)) : [];
+  return { title: "Misfires and rough running", lines: [`Ignition: ${gradeText(c, e.grade)}.`, ...(codes.length ? [`Misfire codes present: ${codes.join(", ")}.`] : []), ...(e.why.length ? e.why : [e.grade === "unknown" ? e.hint : "No misfire trouble in the self-tests or recent drives."])] };
+}
+// Strong words are enough on their own; weak words only count in pairs, so "road trip" doesn't mean fuel economy.
+const ASK = [
+  { id: "maint", q: "What maintenance is due?", strong: /\b(due|maintenance|service|oil|filters?|plugs?|timing belt|coolant|fluid)\b/, weak: /\b(change|replace|interval|next|belt)\b/, fn: askMaint },
+  { id: "spend", q: "What have I spent on maintenance?", strong: /\b(spent|spend|cost|costs|paid)\b/, weak: /\b(money|total)\b/, fn: askSpend },
+  { id: "battery", q: "Is my battery OK?", strong: /\b(battery|batteries|volts?|voltage|alternator|charging)\b/, weak: /\b(crank|cranking|start|starting)\b/, fn: askBattery },
+  { id: "fuel", q: "How's my fuel economy?", strong: /\b(mpg|fuel economy|economy|gas mileage|idling)\b/, weak: /\b(gas|fuel|trip|trips|idle|mileage)\b/, fn: askFuel },
+  { id: "codes", q: "Why is the check-engine light on?", strong: /\b(codes?|check.engine|engine light|warning light|dtc)\b/, weak: /\b(light|mil)\b/, fn: askCodes },
+  { id: "health", q: "How healthy is my van?", strong: /\b(health|healthy|overall|condition)\b/, weak: /\b(worst|problems?|ok|okay|fine)\b/, fn: askHealth },
+  { id: "recalls", q: "Are there any recalls?", strong: /\b(recalls?|nhtsa)\b/, weak: /\b(safety)\b/, fn: askRecalls },
+  { id: "ready", q: "Will it pass an emissions test?", strong: /\b(emissions?|smog|readiness|monitors?)\b/, weak: /\b(inspection|test)\b/, fn: askReady },
+  { id: "misfire", q: "Is the engine misfiring?", strong: /\b(misfires?|misfiring|ignition|coils?)\b/, weak: /\b(rough|shakes?|shaking|stumbles?)\b/, fn: askMisfire }
+];
+function askBuiltIn(q) {
+  const s = q.toLowerCase(), hits = re => (s.match(new RegExp(re.source, "g")) || []).length;
+  if (/\b[pcbu][0-9a-f]{4}\b/i.test(s)) return { id: "codes", ...askCodes(s) };
+  const score = ASK.map(a => { const st = hits(a.strong), wk = hits(a.weak); return { a, st, n: st * 2 + wk, ok: st > 0 || wk >= 2 }; }).filter(x => x.ok).sort((x, y) => y.n - x.n);
+  if (!score.length) return null;
+  // Spending questions mention parts too ("what did the oil change cost"); a spending word wins over part names.
+  const best = score.find(x => x.a.id === "spend" && x.st) || score[0];
+  return { id: best.a.id, ...best.a.fn(s) };
+}
+
+// AI providers. Each is called straight from the browser with the owner's own key, only when they ask.
+const AI = {
+  gemini: { name: "Gemini", label: "Gemini (Google): free tier", model: "gemini-flash-latest", models: ["gemini-flash-latest", "gemini-flash-lite-latest"], keyUrl: "https://aistudio.google.com/apikey",
+    note: "Has a free tier with daily limits. On the free tier, Google may use what you send to improve its products.",
+    req: (k, m, sys, user) => [`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": k }, body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: { maxOutputTokens: 4096 } }) }],
+    text: j => { const c = j.candidates && j.candidates[0]; return c && c.content ? (c.content.parts || []).map(p => p.text || "").join("") : ""; } },
+  claude: { name: "Claude", label: "Claude (Anthropic): paid per use", model: "claude-opus-5-5", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], keyUrl: "https://platform.claude.com/",
+    note: "Paid per use from prepaid credit: about 3¢ a question on Opus 5.5, well under 1¢ on Haiku 5.5. A Claude chat subscription doesn't include API use.",
+    req: (k, m, sys, user) => {
+      const fb = /opus-5-5|sonnet-5-5/.test(m);   // a refused answer is retried on a fallback model
+      return ["https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": k, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true", ...(fb ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}) }, body: JSON.stringify({ model: m, max_tokens: 4000, system: sys, messages: [{ role: "user", content: user }], ...(fb ? { fallbacks: "default" } : {}) }) }];
+    },
+    text: j => j.stop_reason === "refusal" ? "" : (j.content || []).filter(b => b.type === "text").map(b => b.text).join("") },
+  openai: { name: "ChatGPT", label: "ChatGPT (OpenAI): paid per use", model: "gpt-5-mini", models: ["gpt-5-mini", "gpt-5"], keyUrl: "https://platform.openai.com/api-keys",
+    note: "Paid per use from prepaid credit. A ChatGPT Plus subscription doesn't include API use.",
+    req: (k, m, sys, user) => ["https://api.openai.com/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + k }, body: JSON.stringify({ model: m, messages: [{ role: "system", content: sys }, { role: "user", content: user }] }) }],
+    text: j => (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "" },
+  grok: { name: "Grok", label: "Grok (xAI): paid per use", model: "grok-4", models: ["grok-4"], keyUrl: "https://console.x.ai/",
+    note: "Paid per use from prepaid credit. If xAI blocks requests from web apps, pick another provider.",
+    req: (k, m, sys, user) => ["https://api.x.ai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + k }, body: JSON.stringify({ model: m, messages: [{ role: "system", content: sys }, { role: "user", content: user }] }) }],
+    text: j => (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "" }
+};
+// Keys and choices use their own prefix: never in backups, never synced.
+const aiCfg = () => { try { return JSON.parse(localStorage.getItem("odxai:cfg")) || {}; } catch { return {}; } };
+const aiSave = c => { try { localStorage.setItem("odxai:cfg", JSON.stringify(c)); } catch {} };
+const aiProv = () => AI[aiCfg().provider] ? aiCfg().provider : "gemini";
+const aiKey = (p = aiProv()) => (aiCfg().keys || {})[p] || "";
+const aiModel = (p = aiProv()) => ((aiCfg().models || {})[p] || "").trim() || AI[p].model;
+const AI_SYSTEM = `You help the owner of a ${VAN_NAME} understand their van. Answer their question in plain English: short sentences, under 150 words, no jargon without a short explanation. For anything about this van, use only the facts sheet; if it doesn't cover the question, say so and give general guidance for this model. Never invent readings, dates or prices. If something could be unsafe (brakes, overheating, a flashing check-engine light, a fuel smell, steering), say to stop driving and see a mechanic. End with one short line reminding them this is guidance, not a guarantee.`;
+function aiFacts() {
+  const drv = drives().slice(-10).map(d => `- ${new Date(d.t).toLocaleDateString([], { dateStyle: "medium" })}: ${Math.round((d.dur || 0) / 60)} min` + [d.km != null && d.fuelL > 0 ? econText(d.km, d.fuelL) : "", d.restV != null ? `battery at rest ${d.restV} V` : "", d.crankV != null ? `cranking ${d.crankV} V` : "", d.runV != null ? `running ${d.runV} V` : "", d.ltft1 != null ? `long-term fuel trims ${d.ltft1}% / ${d.ltft2}%` : ""].filter(Boolean).map(x => ", " + x).join(""));
+  let t = `Vehicle: ${VAN_NAME}. Units the owner uses: ${units === "us" ? "miles, mpg, °F" : "km, L/100 km, °C"}. Today: ${new Date().toLocaleDateString([], { dateStyle: "long" })}.${state.mode === "demo" ? " (Demo van: simulated data.)" : ""}\n\n` + reportText(reportModel({ vin: false, notes: true })) + (drv.length ? "\n\nLAST DRIVES\n" + drv.join("\n") : "");
+  return t.length > 12000 ? t.slice(0, 12000) + "\n(trimmed)" : t;
+}
+async function aiAsk(q) {
+  const p = aiProv(), P = AI[p];
+  if (state.mode === "demo") { await sleep(400); return { who: P.name + " (demo)", text: `Demo van: this is a sample answer. With your own ${P.name} key, the answer to "${q}" would appear here, written from your van's data.\n\n- It uses only the facts the app has worked out.\n- It never sees your VIN.\n\nThis is guidance, not a guarantee.` }; }
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
+  try {
+    const [url, opt] = P.req(aiKey(p), aiModel(p), AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
+    let r;
+    try { r = await fetch(url, { ...opt, signal: ctl.signal }); }
+    catch { throw new Error(`Couldn't reach ${P.name}. Check your connection.${p === "grok" ? " xAI may also block requests from web apps." : ""}`); }
+    const body = await r.text(), j = (() => { try { return JSON.parse(body); } catch { return {}; } })();
+    if (!r.ok) {
+      const msg = (j.error && (j.error.message || j.error.status)) || "";
+      if (r.status === 429) throw new Error(`${P.name}'s usage limit was reached. Try again later, or search Google below.`);
+      if (r.status === 401 || r.status === 403 || /api.?key/i.test(msg)) throw new Error(`${P.name} didn't accept the key. Check it under More → AI answers.`);
+      if (r.status === 404 || /model/i.test(msg)) throw new Error(`${P.name} doesn't recognise the model "${aiModel(p)}". Change it under More → AI answers.`);
+      throw new Error(`${P.name} couldn't answer right now (error ${r.status}). Try again later, or search Google below.`);
+    }
+    const text = P.text(j).trim();
+    if (!text) throw new Error(`${P.name} didn't give an answer to that question. Try wording it differently, or search Google below.`);
+    return { who: P.name, text };
+  } finally { clearTimeout(tm); }
+}
+// Simple formatting for AI answers: paragraphs, bullet lists and **bold**. Everything is escaped first.
+function mdLite(t) {
+  let html = "", list = false;
+  for (let l of esc(t.trim()).split(/\n/)) {
+    l = l.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^#+\s*/, "");
+    const m = /^\s*(?:[-*•]|\d+\.)\s+(.*)/.exec(l);
+    if (m) { if (!list) { html += "<ul>"; list = true; } html += `<li>${m[1]}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    if (l.trim()) html += `<p>${l}</p>`;
+  }
+  return html + (list ? "</ul>" : "");
+}
+const googleUrl = q => "https://www.google.com/search?q=" + encodeURIComponent("2018 Honda Odyssey " + q);
+let askBusy = false;
+function renderAsk() {
+  $("#askChips").innerHTML = ASK.map(a => `<button class="btn small" type="button" data-ask="${esc(a.q)}">${esc(a.q)}</button>`).join("");
+  const p = AI[aiProv()], ready = state.mode === "demo" || aiKey();
+  $("#askFoot").innerHTML = `Answers come from your van's data on this device and are guidance, not a guarantee. ${ready ? `If the app can't answer, your question and a summary of your van's data (never the VIN) go to ${esc(p.name)}.` : "For questions the app can't answer, you can add an AI provider under More → AI answers."}`;
+}
+async function ask(q) {
+  q = q.trim().slice(0, 500); if (!q || askBusy) return;
+  $("#askIn").value = q;
+  const out = $("#askOut"), b = askBuiltIn(q), p = AI[aiProv()], ready = state.mode === "demo" || !!aiKey();
+  const google = `<a class="btn small" href="${esc(googleUrl(q))}" target="_blank" rel="noopener">Search Google</a>`;
+  const card = (title, body, foot) => `<div class="panel stack" style="gap:8px"><div class="row between"><b>${esc(title)}</b>${foot ? `<span class="muted" style="font-size:.8rem">${esc(foot)}</span>` : ""}</div><div class="prose">${body}</div></div>`;
+  if (b) {
+    out.innerHTML = card(b.title, b.lines.map(l => `<p>${esc(l)}</p>`).join(""), "From your van's data") + `<div class="row" style="gap:8px">${ready ? `<button class="btn small" type="button" id="askMore">Ask ${esc(p.name)} for more</button>` : ""}${google}</div>`;
+    const more = $("#askMore"); if (more) more.onclick = () => askAi(q, true);
+    return;
+  }
+  if (!ready) {
+    out.innerHTML = `<div class="notice">The app doesn't have a built-in answer for that yet. Try one of the questions above, search Google, or add an AI provider under More → AI answers to answer questions like this.</div><div class="row" style="gap:8px">${google}<button class="btn small" type="button" data-go-ai>Set up AI answers</button></div>`;
+    out.querySelector("[data-go-ai]").onclick = () => show("more");
+    return;
+  }
+  askAi(q, false);
+}
+async function askAi(q, keepBuiltIn) {
+  const out = $("#askOut"), p = AI[aiProv()], slot = document.createElement("div");
+  slot.className = "stack"; slot.style.gap = "10px"; slot.id = "askAi";
+  if (keepBuiltIn) { const m = $("#askMore"); if (m) m.remove(); const old = $("#askAi"); if (old) old.remove(); out.appendChild(slot); } else { out.innerHTML = ""; out.appendChild(slot); }
+  askBusy = true; $("#askBtn").disabled = true;
+  slot.innerHTML = `<p class="muted">Asking ${esc(p.name)}…</p>`;
+  const google = `<a class="btn small" href="${esc(googleUrl(q))}" target="_blank" rel="noopener">Search Google</a>`;
+  try {
+    const a = await aiAsk(q);
+    slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div><p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic.</p></div>`;
+  } catch (e) { slot.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
+  askBusy = false; $("#askBtn").disabled = false;
+}
+function renderAiSet() {
+  const box = $("#aiSet"); if (!box) return;
+  const p = aiProv(), P = AI[p], key = aiKey(p), c = aiCfg();
+  box.innerHTML = `<p class="muted" style="font-size:.86rem;margin:0">Used only when Ask about my van can't answer from the app's own data. Your question and a summary of your van's data (never the VIN) go to the provider you pick. Your key stays on this device; it isn't in backups or cloud sync.</p>
+    <label class="flabel">Provider<select class="inp" id="aiProv">${Object.entries(AI).map(([id, x]) => `<option value="${id}"${id === p ? " selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
+    <p class="muted" style="font-size:.84rem;margin:0">${esc(P.note)} <a href="${esc(P.keyUrl)}" target="_blank" rel="noopener">Get a ${esc(P.name)} key</a>.</p>
+    <form class="stack" id="aiForm" style="gap:8px">
+      <input class="inp" id="aiKey" type="password" autocomplete="off" aria-label="${esc(P.name)} API key" placeholder="${key ? "Key saved. Paste a new one to replace it" : "Paste your " + esc(P.name) + " API key"}">
+      <label class="flabel">Model<input class="inp" id="aiModel" list="aiModels" autocomplete="off" value="${esc(((c.models || {})[p]) || "")}" placeholder="${esc(P.model)}"></label>
+      <datalist id="aiModels">${P.models.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
+      <div class="row" style="gap:8px"><button class="btn" type="submit">Save</button>${key ? `<button class="btn" type="button" id="aiDel">Remove key</button>` : ""}</div>
+    </form>
+    <p class="muted" id="aiMsg" role="status" style="font-size:.84rem;margin:0">${key ? `${esc(P.name)} is ready (model ${esc(aiModel(p))}).` : ""}</p>`;
+}
+$("#aiSet").addEventListener("change", e => { if (e.target.id === "aiProv") { const c = aiCfg(); c.provider = e.target.value; aiSave(c); renderAiSet(); } });
+$("#aiSet").addEventListener("submit", e => {
+  e.preventDefault();
+  const c = aiCfg(), p = aiProv(), k = $("#aiKey").value.trim(), m = $("#aiModel").value.trim();
+  c.keys = c.keys || {}; c.models = c.models || {};
+  if (k) c.keys[p] = k;
+  if (m) c.models[p] = m; else delete c.models[p];
+  aiSave(c); renderAiSet();
+  $("#aiMsg").textContent = c.keys[p] ? `Saved. ${AI[p].name} is ready (model ${aiModel(p)}).` : "Saved. Paste a key to switch AI answers on.";
+});
+$("#aiSet").addEventListener("click", e => { if (e.target.id === "aiDel") { const c = aiCfg(); delete (c.keys || {})[aiProv()]; aiSave(c); renderAiSet(); $("#aiMsg").textContent = "Key removed from this device."; } });
+$("#askForm").onsubmit = e => { e.preventDefault(); ask($("#askIn").value); };
+$("#askChips").onclick = e => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask); };
+
 /* ---------- cloud sync (the owner's own Google Drive; nothing is sent until they sign in) ---------- */
 // The client ID identifies this app to Google (OAuth "Web application" client). It isn't a secret.
 // Tests override it with window.MYVAN_GOOGLE_CLIENT_ID.
@@ -2664,8 +2926,8 @@ $("#syncOut").addEventListener("submit", e => {
 
 /* ---------- tabs & wiring ---------- */
 let current = "live", parentView = "live";
-const TAB_OF = { live: "live", readings: "live", health: "health", history: "health", report: "health", codes: "codes", more: "more", checks: "more", log: "more" };
-const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", history: "Drive history", report: "Health report", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
+const TAB_OF = { live: "live", readings: "live", ask: "live", health: "health", history: "health", report: "health", codes: "codes", more: "more", checks: "more", log: "more" };
+const TITLES = { live: "MyVan Assistant", readings: "All readings", ask: "Ask about my van", health: "Health", history: "Drive history", report: "Health report", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
 // Each screen change is a history entry ({ v, d: depth }), so back returns to the previous screen.
 // Tapping Home rewinds to the first entry; back on Home leaves the app.
 function show(v, fromHistory) {
@@ -2683,11 +2945,12 @@ function show(v, fromHistory) {
   document.querySelectorAll("section.view").forEach(s => s.hidden = s.id !== "view-" + v);
   $("#topTitle").textContent = TITLES[v]; $("#backBtn").hidden = !sub;
   if (v === "readings") buildReadings();
+  if (v === "ask") renderAsk();
   if (v === "checks") renderChecks();
   if (v === "health") renderHealth();
   if (v === "history") renderHistory();
   if (v === "report") renderReport();
-  if (v === "more") { renderVehicle(); renderMonitors(); updateBadges(); renderRecalls(); }
+  if (v === "more") { renderVehicle(); renderMonitors(); updateBadges(); renderRecalls(); renderAiSet(); }
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
 }
