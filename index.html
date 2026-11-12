@@ -2571,7 +2571,10 @@ const AI = {
 const aiCfg = () => { try { return JSON.parse(localStorage.getItem("odxai:cfg")) || {}; } catch { return {}; } };
 const aiSave = c => { try { localStorage.setItem("odxai:cfg", JSON.stringify(c)); } catch {} };
 const aiProv = () => AI[aiCfg().provider] ? aiCfg().provider : "gemini";
-const aiKey = (p = aiProv()) => (aiCfg().keys || {})[p] || "";
+// Pasted keys can carry invisible characters (spaces, line breaks, zero-width marks). A browser won't send a
+// header containing them and reports a network failure, so keep only printable ASCII.
+const cleanKey = s => String(s || "").replace(/[^\x21-\x7E]/g, "");
+const aiKey = (p = aiProv()) => cleanKey((aiCfg().keys || {})[p]);
 const aiModel = (p = aiProv()) => ((aiCfg().models || {})[p] || "").trim() || AI[p].model;
 const AI_SYSTEM = `You help the owner of a ${VAN_NAME} understand their van. Answer their question in plain English: short sentences, under 150 words, no jargon without a short explanation. For anything about this van, use only the facts sheet; if it doesn't cover the question, say so and give general guidance for this model. Never invent readings, dates or prices. If something could be unsafe (brakes, overheating, a flashing check-engine light, a fuel smell, steering), say to stop driving and see a mechanic. End with one short line reminding them this is guidance, not a guarantee.`;
 function aiFacts() {
@@ -2587,9 +2590,11 @@ async function aiAsk(q) {
     const [url, opt] = P.req(aiKey(p), aiModel(p), AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
     let r;
     try { r = await fetch(url, { ...opt, signal: ctl.signal }); }
-    catch {
+    catch (err) {
       if (ctl.signal.aborted) throw new Error(`${P.name} took more than a minute to answer, so the app stopped waiting. Try again, or try a shorter question.`);
-      throw new Error(`Couldn't reach ${P.name}. Check your connection. A work network, VPN or blocker extension can also stop the request.${p === "grok" ? " xAI may also block requests from web apps." : ""}`);
+      // The browser's own reason helps tell a blocked request from a bad setting.
+      const why = String((err && (err.message || err.name)) || "").slice(0, 120);
+      throw new Error(`Couldn't reach ${P.name}. Check your connection. A work network, VPN or blocker extension can also stop the request.${p === "grok" ? " xAI may also block requests from web apps." : ""}${why ? ` (Details: ${why})` : ""}`);
     }
     const body = await r.text(), j = (() => { try { return JSON.parse(body); } catch { return {}; } })();
     if (!r.ok) {
@@ -2671,12 +2676,13 @@ function renderAiSet() {
 $("#aiSet").addEventListener("change", e => { if (e.target.id === "aiProv") { const c = aiCfg(); c.provider = e.target.value; aiSave(c); renderAiSet(); } });
 $("#aiSet").addEventListener("submit", e => {
   e.preventDefault();
-  const c = aiCfg(), p = aiProv(), k = $("#aiKey").value.trim(), m = $("#aiModel").value.trim();
+  const c = aiCfg(), p = aiProv(), k = cleanKey($("#aiKey").value), m = $("#aiModel").value.replace(/[^\x21-\x7E]/g, "");
   c.keys = c.keys || {}; c.models = c.models || {};
   if (k) c.keys[p] = k;
   if (m) c.models[p] = m; else delete c.models[p];
   aiSave(c); renderAiSet();
-  $("#aiMsg").textContent = c.keys[p] ? `Saved. ${AI[p].name} is ready (model ${aiModel(p)}).` : "Saved. Paste a key to switch AI answers on.";
+  const odd = k && p === "gemini" && !/^AIza[\w-]{35}$/.test(k);
+  $("#aiMsg").textContent = !c.keys[p] ? "Saved. Paste a key to switch AI answers on." : odd ? `Saved, but this doesn't look like a Gemini key. They start with "AIza" and are 39 characters long (this one is ${k.length}). Copy it again from Google AI Studio.` : `Saved. ${AI[p].name} is ready (model ${aiModel(p)}).`;
 });
 $("#aiSet").addEventListener("click", e => { if (e.target.id === "aiDel") { const c = aiCfg(); delete (c.keys || {})[aiProv()]; aiSave(c); renderAiSet(); $("#aiMsg").textContent = "Key removed from this device."; } });
 $("#askForm").onsubmit = e => { e.preventDefault(); ask($("#askIn").value); };

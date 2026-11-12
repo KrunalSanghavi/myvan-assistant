@@ -16,6 +16,7 @@ async function mockAi(page, text = "**Yes**, check the tread first.\n- Look for 
   });
   return calls;
 }
+const GKEY = "AIza" + "T".repeat(35);   // the shape of a real Gemini key
 const VIN = "5FNRL6H9XJB000001";
 const SEED = {
   vin: VIN,
@@ -70,7 +71,7 @@ test("without an AI key, an unknown question offers Google and the AI setup", as
 test("Gemini answers unknown questions with a facts sheet that never includes the VIN, and the key stays out of backups", async ({ page }) => {
   const calls = await mockAi(page);
   await seedStorage(page, SEED);
-  await setProvider(page, "gemini", "gm-test-key");
+  await setProvider(page, "gemini", GKEY);
   await openAsk(page);
   await expect(page.locator("#askFoot")).toContainText("go to Gemini");
   await askQ(page, "Should I buy new tires before a road trip?");
@@ -80,14 +81,14 @@ test("Gemini answers unknown questions with a facts sheet that never includes th
   expect(calls).toHaveLength(1);
   const c = calls[0], prompt = c.body.contents[0].parts[0].text;
   expect(c.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent");
-  expect(c.headers["x-goog-api-key"]).toBe("gm-test-key");
+  expect(c.headers["x-goog-api-key"]).toBe(GKEY);
   expect(c.body.systemInstruction.parts[0].text).toContain("2018 Honda Odyssey Elite");
   expect(prompt).toContain("Question: Should I buy new tires before a road trip?");
   expect(prompt).toContain("VEHICLE HEALTH REPORT");
   expect(prompt).toContain("battery at rest 12.6 V");
   expect(prompt).not.toContain(VIN);
   const st = await readStorage(page);
-  expect(JSON.stringify(st)).not.toContain("gm-test-key");   // not in anything a backup or sync would copy
+  expect(JSON.stringify(st)).not.toContain(GKEY);   // not in anything a backup or sync would copy
 });
 
 test("Claude: built-in answer first, then Ask Claude for more, with the browser-access header and chosen model", async ({ page }) => {
@@ -126,7 +127,7 @@ for (const [p, name, model, url] of [["openai", "ChatGPT", "gpt-5-mini", "https:
 
 test("switching providers keeps each provider's key, and keys can be removed", async ({ page }) => {
   await seedStorage(page, {});
-  await setProvider(page, "gemini", "gm-1");
+  await setProvider(page, "gemini", GKEY);
   await setProvider(page, "claude", "sk-2");
   await page.locator("#aiProv").selectOption("gemini");
   await expect(page.locator("#aiKey")).toHaveAttribute("placeholder", /Key saved/);
@@ -152,10 +153,28 @@ test("a provider that can't be reached gets a clear message and a Google fallbac
   // Fail the request the way a blocked network or extension does.
   await page.addInitScript(() => { const f = window.fetch; window.fetch = (u, o) => String(u).includes("generativelanguage") ? Promise.reject(new TypeError("Failed to fetch")) : f(u, o); });
   await seedStorage(page, SEED);
-  await setProvider(page, "gemini", "gm-test-key");
+  await setProvider(page, "gemini", GKEY);
   await openAsk(page);
   await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
   await expect(page.locator("#askAi .notice")).toContainText("Couldn't reach Gemini");
   await expect(page.locator("#askAi .notice")).toContainText("work network, VPN or blocker extension");
   await expect(page.locator("#askAi").getByRole("link", { name: "Search Google" })).toBeVisible();
+});
+
+test("a pasted key is cleaned of hidden characters, and a key that doesn't look like Gemini's gets a warning", async ({ page }) => {
+  const calls = await mockAi(page);
+  await seedStorage(page, SEED);
+  await tab(page, "More");
+  await page.locator("#aiKey").fill("  AIza" + "T".repeat(20) + "​" + "T".repeat(15) + " ");   // spaces and a zero-width space
+  await page.locator("#aiForm").getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#aiMsg")).toContainText("Gemini is ready");
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#aiAnswer")).toContainText("From Gemini");
+  expect(calls[0].headers["x-goog-api-key"]).toBe(GKEY);
+  await tab(page, "More");
+  await page.locator("#aiKey").fill("not-a-real-key");
+  await page.locator("#aiForm").getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#aiMsg")).toContainText("doesn't look like a Gemini key");
+  await expect(page.locator("#aiMsg")).toContainText("this one is 14");
 });
