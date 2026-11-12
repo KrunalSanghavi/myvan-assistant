@@ -25,5 +25,5 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [ ] Transmission computer codes beyond the emissions set. ([#14](https://github.com/KrunalSanghavi/myvan-assistant/issues/14))
 - [ ] Vehicle profiles, so the same app correctly monitors other cars in the family. ([#15](https://github.com/KrunalSanghavi/myvan-assistant/issues/15))
 - [ ] An always-on logger in the van, for example a Raspberry Pi that records every drive and syncs over Wi-Fi at home, with no phone needed. ([#16](https://github.com/KrunalSanghavi/myvan-assistant/issues/16))
-- [ ] Optional cloud sync, so phone and laptop share one history. ([#17](https://github.com/KrunalSanghavi/myvan-assistant/issues/17))
+- [x] Optional cloud sync, so phone and laptop share one history. ([#17](https://github.com/KrunalSanghavi/myvan-assistant/issues/17))
 - [ ] Predictive scoring trained on your own history to estimate when a part is likely to reach its limit. ([#18](https://github.com/KrunalSanghavi/myvan-assistant/issues/18))

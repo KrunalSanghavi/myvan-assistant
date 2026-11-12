@@ -18,7 +18,8 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
 - **Recalls:** More → Recalls checks NHTSA's free recall data for the van's VIN (read from the van or typed in) and lists every recall for that model and year, with a link to see which are still open for your VIN. Results are saved for offline viewing and appear in the health report.
 - **Early warnings:** spots slow changes, such as a battery weakening or a cylinder starting to misfire, before a trouble code or warning light appears.
 - **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
-- **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, units, appearance and help.
+- **Cloud sync:** More → Cloud sync keeps drive history, maintenance, the service log and code notes the same on your phone and laptop through your own Google Drive. The copy goes into a hidden app folder, and an optional passphrase scrambles it before it leaves the device. Display settings stay per device. Restore from a file can also merge instead of replacing.
+- **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, cloud sync, units, appearance and help.
 - **Demo van:** a simulated Odyssey for trying every screen without the car.
 
 ## Adapter
@@ -34,6 +35,15 @@ Power use: when you disconnect, the app sends `ATLP` to put the adapter into low
 3. Open it once while online. After that it works without signal.
 
 On iPhone, use the Bluefy browser, because Safari has no Web Bluetooth.
+
+## Cloud sync setup (one time)
+
+Sync talks to Google Drive straight from the browser, so no server is needed. Google only needs to know the app exists:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
+2. Set up the OAuth consent screen (External) with the scope `https://www.googleapis.com/auth/drive.appdata`.
+3. Create an OAuth client ID of type **Web application** with the authorized JavaScript origin `https://krunalsanghavi.github.io` and the redirect URI `https://krunalsanghavi.github.io/myvan-assistant/`. For local testing, also add `http://localhost:8080` and `http://localhost:8080/`.
+4. Put the client ID in `GOOGLE_CLIENT_ID` in `index.html`. It isn't a secret. The client secret is never used.
 
 ## Development
 
@@ -68,7 +78,7 @@ npm run serve   # http://localhost:8080
 - Health grades are estimates to help you plan, not guarantees.
 - Live data and codes work on other gasoline cars sold in the US from 1996 on, but the normal ranges and guides are tuned for this van.
 
-All data (drive history, notes, maintenance) stays on the device in browser storage.
+All data (drive history, notes, maintenance) stays on the device in browser storage, unless you turn on cloud sync, which copies it to your own Google Drive.
 
 ## License
 

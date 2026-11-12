@@ -72,3 +72,18 @@ for (const [label, text, msg] of [
     expect(await readStorage(page)).toEqual(SAVED);
   });
 }
+
+test("restore can merge: adds the backup's drives and keeps this device's own notes and settings", async ({ page }) => {
+  await seedStorage(page, SAVED);
+  const file = await backUp(page);
+  await seedStorage(page, { drives: [drive(9)], "note:P0171": "Mine, newer" });
+  await tab(page, "More");
+  await pick(page, file);
+  await page.getByRole("button", { name: "Merge with my data" }).click();
+  await expect(page.locator("#backupMsg")).toContainText("Added 3 drives and 0 service records");
+  const st = await readStorage(page);
+  expect(st.drives.map(d => d.t)).toEqual([1, 2, 3, 9].map(i => drive(i).t));
+  expect(st["note:P0171"]).toBe("Mine, newer");
+  expect(st.maint).toEqual(SAVED.maint);
+  expect(st.units).toBeUndefined();
+});

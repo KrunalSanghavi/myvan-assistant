@@ -15,7 +15,9 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - Every new OBD feature must also be emulated by `demo.emulate()` so it can be tested without the van.
 - User-facing text: plain English, short sentences, no jargon without explanation. Health advice is guidance, not a guarantee.
 - No new external network calls without asking; the app must work offline after first load. Data stays on the device.
-- The one approved network call: the recall check (More → Recalls) sends only the VIN to NHTSA (`vpic.nhtsa.dot.gov` decode, `api.nhtsa.gov` recalls), and only when the owner taps Check recalls. Tests mock both; the demo van uses sample recalls and never calls out.
+- Approved network calls, and nothing else:
+  - Recalls (More → Recalls): sends only the VIN to NHTSA (`vpic.nhtsa.dot.gov` decode, `api.nhtsa.gov` recalls), and only when the owner taps Check recalls. Tests mock both; the demo van uses sample recalls and never calls out.
+  - Cloud sync (More → Cloud sync, #17): only after the owner signs in with Google. `accounts.google.com` (sign-in popup), `www.googleapis.com` (Drive files in the hidden `appDataFolder`, scope `drive.appdata`), `oauth2.googleapis.com` (revoke on sign-out). `GOOGLE_CLIENT_ID` in index.html must be set for it to work. Tests mock all three; the demo van uses a pretend in-memory cloud. Sync bookkeeping (token, account, change times) uses the `odxsync:` prefix so it never lands in backups.
 
 ## Verify
 - `npm test` runs static checks plus Playwright on phone (390px) and laptop (1280px) viewports. Locally it uses installed Chrome; CI uses Playwright Chromium.

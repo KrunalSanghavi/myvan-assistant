@@ -40,7 +40,7 @@ export async function connectFakeUsb(page, { without = [] } = {}) {
       return {
         open: async () => {},
         readable: new ReadableStream({ start(c) { ctrl = c; } }),
-        writable: new WritableStream({ write(chunk) { const cmd = dec.decode(chunk).trim(); setTimeout(() => ctrl.enqueue(enc.encode(demo.emulate(cmd) + "\r\r>")), 3); } }),
+        writable: new WritableStream({ write(chunk) { const cmd = dec.decode(chunk).trim(); setTimeout(() => { try { ctrl.enqueue(enc.encode(demo.emulate(cmd) + "\r\r>")); } catch {} }, 3); } }),   // the app may have closed the port by then
         close: async () => {}
       };
     } } });
