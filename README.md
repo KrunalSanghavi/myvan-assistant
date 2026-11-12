@@ -14,6 +14,7 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
   - the part ages you enter
 - **Trip and fuel economy:** distance, fuel used, mpg, idle time and cost for the drive in progress, estimated from the airflow sensor. Set your fuel price once and each saved trip records what it cost.
 - **Drive history:** Health → History across drives charts any saved per-drive number (fuel economy, trip cost, fuel trims, idle airflow, warm-up time, battery and charging voltages and more) over 2 weeks, 30 days, 90 days or all time, with the warning level marked.
+- **Health report to share:** Health → Health report builds a summary for a mechanic or a buyer (codes, readiness monitors, the report card, parts age and service history). Print it or save it as a PDF, email it (the report goes in the message), or share it as a file. The VIN and service notes are optional.
 - **Early warnings:** spots slow changes, such as a battery weakening or a cylinder starting to misfire, before a trouble code or warning light appears.
 - **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
 - **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, units, appearance and help.
