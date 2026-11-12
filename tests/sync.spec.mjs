@@ -184,12 +184,25 @@ test("offline: says so and sends nothing", async ({ page }) => {
 
 test("without a Google client ID, sign-in explains that sync isn't switched on", async ({ page }) => {
   const calls = [];
+  await page.addInitScript(() => { window.MYVAN_GOOGLE_CLIENT_ID = ""; });
   await page.context().route(/accounts.google.com|www.googleapis.com|oauth2.googleapis.com/, r => { calls.push(r.request().url()); return r.abort(); });
   await seedStorage(page, {});
   await tab(page, "More");
   await page.getByRole("button", { name: "Sign in with Google" }).click();
   await expect(msg(page)).toContainText("isn't switched on");
   expect(calls).toEqual([]);
+});
+
+test("the real client ID is built in, and sign-in sends it to Google", async ({ page, baseURL }) => {
+  const seen = [];
+  await page.context().route("https://accounts.google.com/**", r => { seen.push(new URL(r.request().url())); return r.fulfill({ contentType: "text/html", body: "<p>Google</p>" }); });
+  await seedStorage(page, {});
+  await tab(page, "More");
+  const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Sign in with Google" }).click()]);
+  await popup.waitForLoadState();
+  expect(seen[0].searchParams.get("client_id")).toBe("57823011336-c57a4ibllmqcug31a5b56841jkcfhva6.apps.googleusercontent.com");
+  expect(seen[0].searchParams.get("redirect_uri")).toBe(baseURL);
+  await popup.close();
 });
 
 test("demo van syncs to a pretend cloud and never contacts Google", async ({ page }) => {
