@@ -2587,7 +2587,10 @@ async function aiAsk(q) {
     const [url, opt] = P.req(aiKey(p), aiModel(p), AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
     let r;
     try { r = await fetch(url, { ...opt, signal: ctl.signal }); }
-    catch { throw new Error(`Couldn't reach ${P.name}. Check your connection.${p === "grok" ? " xAI may also block requests from web apps." : ""}`); }
+    catch {
+      if (ctl.signal.aborted) throw new Error(`${P.name} took more than a minute to answer, so the app stopped waiting. Try again, or try a shorter question.`);
+      throw new Error(`Couldn't reach ${P.name}. Check your connection. A work network, VPN or blocker extension can also stop the request.${p === "grok" ? " xAI may also block requests from web apps." : ""}`);
+    }
     const body = await r.text(), j = (() => { try { return JSON.parse(body); } catch { return {}; } })();
     if (!r.ok) {
       const msg = (j.error && (j.error.message || j.error.status)) || "";
