@@ -15,6 +15,7 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - Every new OBD feature must also be emulated by `demo.emulate()` so it can be tested without the van.
 - User-facing text: plain English, short sentences, no jargon without explanation. Health advice is guidance, not a guarantee.
 - No new external network calls without asking; the app must work offline after first load. Data stays on the device.
+- The one approved network call: the recall check (More → Recalls) sends only the VIN to NHTSA (`vpic.nhtsa.dot.gov` decode, `api.nhtsa.gov` recalls), and only when the owner taps Check recalls. Tests mock both; the demo van uses sample recalls and never calls out.
 
 ## Verify
 - `npm test` runs static checks plus Playwright on phone (390px) and laptop (1280px) viewports. Locally it uses installed Chrome; CI uses Playwright Chromium.
