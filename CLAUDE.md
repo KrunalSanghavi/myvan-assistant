@@ -18,6 +18,7 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - Approved network calls, and nothing else:
   - Recalls (More → Recalls): sends only the VIN to NHTSA (`vpic.nhtsa.dot.gov` decode, `api.nhtsa.gov` recalls), and only when the owner taps Check recalls. Tests mock both; the demo van uses sample recalls and never calls out.
   - Cloud sync (More → Cloud sync, #17): only after the owner signs in with Google. `accounts.google.com` (sign-in popup), `www.googleapis.com` (Drive files in the hidden `appDataFolder`, scope `drive.appdata`), `oauth2.googleapis.com` (revoke on sign-out). `GOOGLE_CLIENT_ID` in index.html must be set for it to work. Tests mock all three; the demo van uses a pretend in-memory cloud. Sync bookkeeping (token, account, change times) uses the `odxsync:` prefix so it never lands in backups.
+  - AI answers (Ask about my van, #12): only when the app has no built-in answer, or the owner taps Ask <provider> for more, and only with the owner's own key. Sends the question plus a facts sheet (the health report text and recent drives, never the VIN) to the provider the owner picked: Gemini (`generativelanguage.googleapis.com`, default), Claude (`api.anthropic.com`), ChatGPT (`api.openai.com`) or Grok (`api.x.ai`). Keys live under `odxai:`, so they are never in backups or sync. Tests mock all four; the demo van gives a sample answer and never calls out. "Search Google" is a plain link the owner taps.
 
 ## Verify
 - `npm test` runs static checks plus Playwright on phone (390px) and laptop (1280px) viewports. Locally it uses installed Chrome; CI uses Playwright Chromium.
@@ -29,6 +30,6 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - `/ship-enhancement <issue#>`: branch `feat/<issue#>-<slug>` **from `main`**, implement, test, PR with `Closes #N`, tick ROADMAP.md, merge when CI passes.
 - `/release`: when a milestone's agent-ready work is merged, bump `APP_VERSION` and `sw.js` `VERSION` together, tag `vX.Y`; the Release workflow publishes notes.
 - Never commit to `main` directly; open a PR. **Merge PRs yourself once CI passes** (`gh pr merge --merge --delete-branch`). Never stack PRs: when a PR's base branch is deleted on merge, GitHub closes the dependent PR. Finish one PR before branching the next.
-- Ask the owner before release tags (other than ones they've approved), repo settings changes, or work on held issues (#12 is on hold).
+- Ask the owner before release tags (other than ones they've approved), repo settings changes, or work on held issues (none are on hold right now).
 - The repo is public: commit as `KrunalSanghavi <64157848+KrunalSanghavi@users.noreply.github.com>` (set in local git config), never a work email.
 - Live site: https://krunalsanghavi.github.io/myvan-assistant/ (GitHub Pages from `main`).

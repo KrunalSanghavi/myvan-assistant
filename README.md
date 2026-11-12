@@ -18,8 +18,9 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
 - **Recalls:** More → Recalls checks NHTSA's free recall data for the van's VIN (read from the van or typed in) and lists every recall for that model and year, with a link to see which are still open for your VIN. Results are saved for offline viewing and appear in the health report.
 - **Early warnings:** spots slow changes, such as a battery weakening or a cylinder starting to misfire, before a trouble code or warning light appears.
 - **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
+- **Ask about my van:** type a question or tap a suggestion ("Is my battery OK?", "When is my next oil change?", "What does P0420 mean?"). Common questions are answered by the app from your own data, offline and free. For anything else, an AI provider you choose under More → AI answers (Gemini's free tier by default, or Claude, ChatGPT or Grok with your own key) answers from a summary of your van's data that never includes the VIN. Search Google is always one tap away.
 - **Cloud sync:** More → Cloud sync keeps drive history, maintenance, the service log and code notes the same on your phone and laptop through your own Google Drive. The copy goes into a hidden app folder, and an optional passphrase scrambles it before it leaves the device. Display settings stay per device. Restore from a file can also merge instead of replacing.
-- **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, cloud sync, units, appearance and help.
+- **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, cloud sync, AI answers, units, appearance and help.
 - **Demo van:** a simulated Odyssey for trying every screen without the car.
 
 ## Adapter
