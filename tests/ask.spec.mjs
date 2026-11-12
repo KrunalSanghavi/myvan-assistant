@@ -147,3 +147,15 @@ test("demo van gives a sample AI answer without a key and without calling out", 
   await expect(out(page)).toContainText("From your van's data");
   expect(calls).toEqual([]);
 });
+
+test("a provider that can't be reached gets a clear message and a Google fallback", async ({ page }) => {
+  // Fail the request the way a blocked network or extension does.
+  await page.addInitScript(() => { const f = window.fetch; window.fetch = (u, o) => String(u).includes("generativelanguage") ? Promise.reject(new TypeError("Failed to fetch")) : f(u, o); });
+  await seedStorage(page, SEED);
+  await setProvider(page, "gemini", "gm-test-key");
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#askAi .notice")).toContainText("Couldn't reach Gemini");
+  await expect(page.locator("#askAi .notice")).toContainText("work network, VPN or blocker extension");
+  await expect(page.locator("#askAi").getByRole("link", { name: "Search Google" })).toBeVisible();
+});
