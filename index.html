@@ -2547,7 +2547,7 @@ function askBuiltIn(q) {
 
 // AI providers. Each is called straight from the browser with the owner's own key, only when they ask.
 const AI = {
-  gemini: { name: "Gemini", label: "Gemini (Google): free tier", model: "gemini-flash-latest", models: ["gemini-flash-latest", "gemini-flash-lite-latest"], keyUrl: "https://aistudio.google.com/apikey",
+  gemini: { name: "Gemini", label: "Gemini (Google): free tier", model: "gemini-flash-latest", models: [], keyUrl: "https://aistudio.google.com/apikey",
     note: "Has a free tier with daily limits. On the free tier, Google may use what you send to improve its products.",
     req: (k, m, sys, user) => [`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": k }, body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: { maxOutputTokens: 4096 } }) }],
     text: j => { const c = j.candidates && j.candidates[0]; return c && c.content ? (c.content.parts || []).map(p => p.text || "").join("") : ""; } },
@@ -2582,7 +2582,24 @@ function aiFacts() {
   let t = `Vehicle: ${VAN_NAME}. Units the owner uses: ${units === "us" ? "miles, mpg, °F" : "km, L/100 km, °C"}. Today: ${new Date().toLocaleDateString([], { dateStyle: "long" })}.${state.mode === "demo" ? " (Demo van: simulated data.)" : ""}\n\n` + reportText(reportModel({ vin: false, notes: true })) + (drv.length ? "\n\nLAST DRIVES\n" + drv.join("\n") : "");
   return t.length > 12000 ? t.slice(0, 12000) + "\n(trimmed)" : t;
 }
-async function aiAsk(q) {
+// Google renames and retires Gemini models. When the saved name isn't recognised, ask which models this key
+// can use and pick the newest general-purpose Flash model (not Lite, preview, image, audio or embedding).
+// The text models this key can use, newest first, or null if Google couldn't be asked.
+async function geminiModels(key) {
+  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key } });
+  if (!r.ok) return null;
+  const j = await r.json(), ver = n => parseFloat((/gemini-(\d+(?:\.\d+)?)/.exec(n) || [])[1]) || 0;
+  const names = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent")).map(m => String(m.name || "").replace(/^models\//, ""))
+    .filter(n => /^gemini/.test(n) && !/image|tts|audio|live|embed/.test(n));
+  return names.length ? names.sort((a, b) => ver(b) - ver(a) || a.length - b.length) : null;
+}
+const geminiBest = list => (list || []).find(n => /^gemini-[\d.]+-flash/.test(n) && !/lite|preview|exp|thinking/.test(n)) || (list || []).find(n => /flash/.test(n)) || (list || [])[0] || null;
+async function geminiPickModel(key) {
+  const list = await geminiModels(key);
+  if (list) { const c = aiCfg(); c.geminiList = list.slice(0, 40); aiSave(c); }
+  return geminiBest(list);
+}
+async function aiAsk(q, retried) {
   const p = aiProv(), P = AI[p];
   if (state.mode === "demo") { await sleep(400); return { who: P.name + " (demo)", text: `Demo van: this is a sample answer. With your own ${P.name} key, the answer to "${q}" would appear here, written from your van's data.\n\n- It uses only the facts the app has worked out.\n- It never sees your VIN.\n\nThis is guidance, not a guarantee.` }; }
   const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
@@ -2601,12 +2618,19 @@ async function aiAsk(q) {
       const msg = (j.error && (j.error.message || j.error.status)) || "";
       if (r.status === 429) throw new Error(`${P.name}'s usage limit was reached. Try again later, or search Google below.`);
       if (r.status === 401 || r.status === 403 || /api.?key/i.test(msg)) throw new Error(`${P.name} didn't accept the key. Check it under More → AI answers.`);
-      if (r.status === 404 || /model/i.test(msg)) throw new Error(`${P.name} doesn't recognise the model "${aiModel(p)}". Change it under More → AI answers.`);
-      throw new Error(`${P.name} couldn't answer right now (error ${r.status}). Try again later, or search Google below.`);
+      const detail = msg ? ` (${P.name} said: ${String(msg).slice(0, 160)})` : "";
+      if (r.status === 404 || /model/i.test(msg)) {
+        if (p === "gemini" && !retried) {
+          let m2 = null; try { m2 = await geminiPickModel(aiKey(p)); } catch {}
+          if (m2 && m2 !== aiModel(p)) { const c = aiCfg(); c.models = c.models || {}; c.models[p] = m2; aiSave(c); clearTimeout(tm); const a = await aiAsk(q, true); return { ...a, note: `Gemini didn't recognise the old model name, so the app switched to ${m2}.` }; }
+        }
+        throw new Error(`${P.name} doesn't recognise the model "${aiModel(p)}". Change it under More → AI answers.${detail}`);
+      }
+      throw new Error(`${P.name} couldn't answer right now (error ${r.status}). Try again later, or search Google below.${detail}`);
     }
     const text = P.text(j).trim();
     if (!text) throw new Error(`${P.name} didn't give an answer to that question. Try wording it differently, or search Google below.`);
-    return { who: P.name, text };
+    return { who: `${P.name} · ${aiModel(p)}`, text };
   } finally { clearTimeout(tm); }
 }
 // Simple formatting for AI answers: paragraphs, bullet lists and **bold**. Everything is escaped first.
@@ -2655,7 +2679,7 @@ async function askAi(q, keepBuiltIn) {
   const google = `<a class="btn small" href="${esc(googleUrl(q))}" target="_blank" rel="noopener">Search Google</a>`;
   try {
     const a = await aiAsk(q);
-    slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div><p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic.</p></div>`;
+    slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div>${a.note ? `<p class="muted" style="font-size:.8rem;margin:0" id="aiNote">${esc(a.note)}</p>` : ""}<p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic.</p></div>`;
   } catch (e) { slot.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
   askBusy = false; $("#askBtn").disabled = false;
 }
@@ -2668,21 +2692,33 @@ function renderAiSet() {
     <form class="stack" id="aiForm" style="gap:8px">
       <input class="inp" id="aiKey" type="password" autocomplete="off" aria-label="${esc(P.name)} API key" placeholder="${key ? "Key saved. Paste a new one to replace it" : "Paste your " + esc(P.name) + " API key"}">
       <label class="flabel">Model<input class="inp" id="aiModel" list="aiModels" autocomplete="off" value="${esc(((c.models || {})[p]) || "")}" placeholder="${esc(P.model)}"></label>
-      <datalist id="aiModels">${P.models.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
+      <datalist id="aiModels">${(p === "gemini" && c.geminiList ? c.geminiList : P.models).map(m => `<option value="${esc(m)}">`).join("")}</datalist>
       <div class="row" style="gap:8px"><button class="btn" type="submit">Save</button>${key ? `<button class="btn" type="button" id="aiDel">Remove key</button>` : ""}</div>
     </form>
     <p class="muted" id="aiMsg" role="status" style="font-size:.84rem;margin:0">${key ? `${esc(P.name)} is ready (model ${esc(aiModel(p))}).` : ""}</p>`;
 }
 $("#aiSet").addEventListener("change", e => { if (e.target.id === "aiProv") { const c = aiCfg(); c.provider = e.target.value; aiSave(c); renderAiSet(); } });
-$("#aiSet").addEventListener("submit", e => {
+$("#aiSet").addEventListener("submit", async e => {
   e.preventDefault();
   const c = aiCfg(), p = aiProv(), k = cleanKey($("#aiKey").value), m = $("#aiModel").value.replace(/[^\x21-\x7E]/g, "");
   c.keys = c.keys || {}; c.models = c.models || {};
   if (k) c.keys[p] = k;
   if (m) c.models[p] = m; else delete c.models[p];
   aiSave(c); renderAiSet();
-  const odd = k && p === "gemini" && !/^AIza[\w-]{35}$/.test(k);
-  $("#aiMsg").textContent = !c.keys[p] ? "Saved. Paste a key to switch AI answers on." : odd ? `Saved, but this doesn't look like a Gemini key. They start with "AIza" and are 39 characters long (this one is ${k.length}). Copy it again from Google AI Studio.` : `Saved. ${AI[p].name} is ready (model ${aiModel(p)}).`;
+  const key = c.keys[p], odd = k && p === "gemini" && !/^AIza[\w-]{35}$/.test(k), say = t => { const el = $("#aiMsg"); if (el) el.textContent = t; };
+  if (!key) { say("Saved. Paste a key to switch AI answers on."); return; }
+  if (odd) { say(`Saved, but this doesn't look like a Gemini key. They start with "AIza" and are 39 characters long (this one is ${k.length}). Copy it again from Google AI Studio.`); return; }
+  if (p !== "gemini" || state.mode === "demo") { say(`Saved. ${AI[p].name} is ready (model ${aiModel(p)}).`); return; }
+  // Ask Google which models this key can use, so the suggestions and the chosen model are ones that work.
+  say("Saved. Checking which Gemini models your key can use…");
+  let list = null; try { list = await geminiModels(cleanKey(key)); } catch {}
+  if (aiProv() !== "gemini") return;
+  if (!list) { say(`Saved. Gemini is ready (model ${aiModel("gemini")}). The app couldn't check which models your key can use; if a question fails, it will try again then.`); return; }
+  const c2 = aiCfg(), was = (c2.models || {}).gemini; c2.geminiList = list.slice(0, 40); c2.models = c2.models || {};
+  const fixed = !was || !list.includes(was);
+  if (fixed) c2.models.gemini = geminiBest(list);
+  aiSave(c2); renderAiSet();
+  say(`Saved. Gemini is ready (model ${aiModel("gemini")}).${was && fixed ? ` Your key can't use "${was}", so the app picked this one.` : ""} ${list.length} model${list.length === 1 ? "" : "s"} available under Model.`);
 });
 $("#aiSet").addEventListener("click", e => { if (e.target.id === "aiDel") { const c = aiCfg(); delete (c.keys || {})[aiProv()]; aiSave(c); renderAiSet(); $("#aiMsg").textContent = "Key removed from this device."; } });
 $("#askForm").onsubmit = e => { e.preventDefault(); ask($("#askIn").value); };

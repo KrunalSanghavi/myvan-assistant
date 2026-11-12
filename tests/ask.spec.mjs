@@ -78,8 +78,9 @@ test("Gemini answers unknown questions with a facts sheet that never includes th
   await expect(page.locator("#aiAnswer")).toContainText("From Gemini");
   await expect(page.locator("#aiAnswer b", { hasText: "Yes" })).toBeVisible();
   await expect(page.locator("#aiAnswer li")).toHaveCount(2);
-  expect(calls).toHaveLength(1);
-  const c = calls[0], prompt = c.body.contents[0].parts[0].text;
+  const gen = calls.filter(x => x.url.includes(":generateContent"));
+  expect(gen).toHaveLength(1);
+  const c = gen[0], prompt = c.body.contents[0].parts[0].text;
   expect(c.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent");
   expect(c.headers["x-goog-api-key"]).toBe(GKEY);
   expect(c.body.systemInstruction.parts[0].text).toContain("2018 Honda Odyssey Elite");
@@ -126,6 +127,7 @@ for (const [p, name, model, url] of [["openai", "ChatGPT", "gpt-5-mini", "https:
 }
 
 test("switching providers keeps each provider's key, and keys can be removed", async ({ page }) => {
+  await mockAi(page);
   await seedStorage(page, {});
   await setProvider(page, "gemini", GKEY);
   await setProvider(page, "claude", "sk-2");
@@ -171,10 +173,62 @@ test("a pasted key is cleaned of hidden characters, and a key that doesn't look 
   await openAsk(page);
   await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
   await expect(page.locator("#aiAnswer")).toContainText("From Gemini");
-  expect(calls[0].headers["x-goog-api-key"]).toBe(GKEY);
+  expect(calls.find(x => x.url.includes(":generateContent")).headers["x-goog-api-key"]).toBe(GKEY);
   await tab(page, "More");
   await page.locator("#aiKey").fill("not-a-real-key");
   await page.locator("#aiForm").getByRole("button", { name: "Save" }).click();
   await expect(page.locator("#aiMsg")).toContainText("doesn't look like a Gemini key");
   await expect(page.locator("#aiMsg")).toContainText("this one is 14");
+});
+
+// A fake Gemini answered inside the page, so a 404 isn't logged as a failed network load.
+const fakeGemini = page => page.addInitScript(() => {
+  window.__gem = [];
+  const f = window.fetch;
+  window.fetch = async (u, o) => {
+    u = String(u); if (!u.includes("generativelanguage")) return f(u, o);
+    window.__gem.push(u.replace(/^.*\/v1beta\//, ""));
+    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    if (u.includes("/models?")) return json(200, { models: [
+      { name: "models/gemini-2.5-flash-lite", supportedGenerationMethods: ["generateContent"] },
+      { name: "models/gemini-3.1-flash-image", supportedGenerationMethods: ["generateContent"] },
+      { name: "models/gemini-3.1-flash", supportedGenerationMethods: ["generateContent", "countTokens"] },
+      { name: "models/gemini-3.1-flash-preview-0901", supportedGenerationMethods: ["generateContent"] },
+      { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] },
+      { name: "models/text-embedding-004", supportedGenerationMethods: ["embedContent"] }] });
+    if (u.includes("gemini-flash-latest")) return json(404, { error: { code: 404, message: "models/gemini-flash-latest is not found for API version v1beta", status: "NOT_FOUND" } });
+    return json(200, { candidates: [{ content: { parts: [{ text: "Answer from the new model." }] } }] });
+  };
+});
+
+test("saving a Gemini key lists the models that key can use and picks the newest Flash model", async ({ page }) => {
+  await fakeGemini(page);
+  await seedStorage(page, SEED);
+  await tab(page, "More");
+  await page.locator("#aiKey").fill(GKEY);
+  await page.locator("#aiModel").fill("gemini-flash-latest");
+  await page.locator("#aiForm").getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#aiMsg")).toContainText("Gemini is ready (model gemini-3.1-flash)");
+  await expect(page.locator("#aiMsg")).toContainText(`can't use "gemini-flash-latest"`);
+  await expect(page.locator("#aiMsg")).toContainText("4 models available");
+  await expect(page.locator("#aiModel")).toHaveValue("gemini-3.1-flash");
+  expect(await page.locator("#aiModels option").evaluateAll(o => o.map(x => x.value))).toEqual(["gemini-3.1-flash", "gemini-3.1-flash-preview-0901", "gemini-2.5-flash", "gemini-2.5-flash-lite"]);
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#aiAnswer")).toContainText("From Gemini · gemini-3.1-flash");
+  expect(await page.evaluate(() => window.__gem)).toEqual(["models?pageSize=200", "models/gemini-3.1-flash:generateContent"]);
+});
+
+test("if a saved Gemini model stops working, the app switches to one the key can use and remembers it", async ({ page }) => {
+  await fakeGemini(page);
+  await seedStorage(page, SEED);
+  await page.evaluate(k => localStorage.setItem("odxai:cfg", JSON.stringify({ provider: "gemini", keys: { gemini: k } })), GKEY);
+  await page.reload();
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#aiAnswer")).toContainText("Answer from the new model.");
+  await expect(page.locator("#aiNote")).toContainText("switched to gemini-3.1-flash");
+  expect(await page.evaluate(() => window.__gem)).toEqual(["models/gemini-flash-latest:generateContent", "models?pageSize=200", "models/gemini-3.1-flash:generateContent"]);
+  await tab(page, "More");
+  await expect(page.locator("#aiModel")).toHaveValue("gemini-3.1-flash");
 });
