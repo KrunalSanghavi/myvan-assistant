@@ -432,6 +432,11 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
       <div class="row"><button class="btn" id="backupBtn" type="button">Back up to a file</button><button class="btn" id="restoreBtn" type="button">Restore from a file</button><input type="file" id="restoreIn" accept=".json,application/json" hidden aria-label="Backup file"></div>
       <div id="backupMsg" role="status"></div>
     </div>
+    <div class="group"><span class="label">Cloud sync</span>
+      <div class="panel stack" style="gap:10px">
+        <div class="stack" id="syncOut" style="gap:10px"></div>
+        <p class="muted" style="font-size:.82rem">Keeps drive history, maintenance, the service log and code notes the same on your phone and laptop, through your own Google Drive. The copy goes into a hidden folder that only MyVan can open; it doesn't show up in your Drive. Units, appearance and other display settings stay separate on each device.</p>
+      </div></div>
     <div class="group"><span class="label">Units</span>
       <div class="seg full" role="group" aria-label="Units"><button id="uUS" type="button">°F · mph · mi</button><button id="uMet" type="button">°C · km/h · km</button></div></div>
     <div class="group"><span class="label">Appearance</span>
@@ -489,7 +494,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.8"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.9"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -500,7 +505,7 @@ const u8 = v => [Math.max(0, Math.min(255, Math.round(v)))];
 const u16 = v => { v = Math.max(0, Math.min(65535, Math.round(v))); return [v >> 8, v & 255]; };
 const store = {
   get(k, d) { try { const v = localStorage.getItem("odx:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} }
+  set(k, v) { try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} if (store.onSet) store.onSet(k); }
 };
 let units = store.get("units", "us");
 /* Appearance: Auto follows the device; Light or Dark forces it. */
@@ -988,7 +993,7 @@ function onConnected() {
   $("#connText").textContent = state.mode === "demo" ? "Demo van" : "Connected · " + state.conn.name;
   $("#discBtn").hidden = false;
   $("#connectBox").hidden = true; $("#liveBox").hidden = false;
-  buildTiles(); renderVehicle(); renderMonitors();
+  buildTiles(); renderVehicle(); renderMonitors(); renderSync();
 }
 async function disconnect(msg) {
   state.polling = false;
@@ -1001,6 +1006,7 @@ async function disconnect(msg) {
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
   connectMsg = msg || ""; renderConnect(); renderVehicle();
+  syncAfterDisconnect();
 }
 
 async function readSupported() {
@@ -1665,6 +1671,11 @@ function applyBackup(b) {
     try { for (const k of storedKeys()) if (!(k in snapshot)) localStorage.removeItem(KEY_PREFIX + k); for (const k in snapshot) localStorage.setItem(KEY_PREFIX + k, snapshot[k]); } catch {}
     throw new Error("Couldn't save the restored data because the browser's storage is full or blocked. Nothing was changed.");
   }
+  syncTouch(Object.keys(b.data));
+  refreshAfterData();
+}
+// Re-read saved data and redraw after a restore or a sync changed it.
+function refreshAfterData() {
   driveCache = null; maintCache = null; units = store.get("units", "us");
   renderMaint(); renderVehicle(); renderHealth();
   if (state.elm) { buildTiles(); renderLive(); }
@@ -2000,7 +2011,7 @@ function openServiceForm(id) {
 }
 function deleteService(id) {
   const e = services().find(x => x.id === id); if (!e) return;
-  store.set("services", services().filter(x => x.id !== id));
+  store.set("services", services().filter(x => x.id !== id)); syncTomb(id);
   syncPartFromLog(e.part); renderMaint(); renderHealth();
 }
 function renderMaint() {
@@ -2406,6 +2417,248 @@ function renderReport() {
   };
 }
 
+/* ---------- cloud sync (the owner's own Google Drive; nothing is sent until they sign in) ---------- */
+// The client ID identifies this app to Google. It isn't a secret. Tests set window.MYVAN_GOOGLE_CLIENT_ID.
+const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID || "";
+const G_AUTH = "https://accounts.google.com/o/oauth2/v2/auth", G_API = "https://www.googleapis.com/drive/v3", G_UP = "https://www.googleapis.com/upload/drive/v3", G_REVOKE = "https://oauth2.googleapis.com/revoke";
+const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata", SYNC_FILE = "myvan-sync.json", SYNC_FORMAT = 1, SYNC_DELAY = 4000;
+// What travels between devices. Display settings (units, theme, pins, views) stay per device.
+const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|note:.+|chk:.+)$/.test(k);
+// Sync's own bookkeeping uses another prefix, so it never ends up in a backup file.
+const ss = {
+  get(k, d) { try { const v = localStorage.getItem("odxsync:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { if (v == null) localStorage.removeItem("odxsync:" + k); else localStorage.setItem("odxsync:" + k, JSON.stringify(v)); } catch {} }
+};
+let syncBusy = null, syncMsg = null, syncTimer = null, syncApplying = false, syncReset = false, demoSync = null;
+const canon = o => JSON.stringify(o, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+function syncTouch(keys) {
+  const m = ss.get("mtimes", {}), now = Date.now();
+  for (const k of keys) if (syncable(k)) m[k] = now;
+  ss.set("mtimes", m);
+}
+function syncTomb(id) { const t = ss.get("tomb", {}); t[id] = Date.now(); ss.set("tomb", t); }
+store.onSet = k => { if (!syncApplying && syncable(k)) { syncTouch([k]); syncSoon(); } };
+
+// Merge two copies: drives and service records are combined; for everything else the newer change wins.
+const unionBy = (win, lose, key) => { const m = new Map(); for (const x of [...(Array.isArray(lose) ? lose : []), ...(Array.isArray(win) ? win : [])]) if (x && key(x) != null) m.set(key(x), x); return [...m.values()]; };
+function mergeSync(L, R) {
+  const tomb = {};
+  for (const T of [L.tomb, R.tomb]) for (const [id, t] of Object.entries(T || {})) tomb[id] = Math.max(+t || 0, tomb[id] || 0);
+  const data = {}, mtimes = {}, lm = L.mtimes || {}, rm = R.mtimes || {};
+  for (const k of new Set([...Object.keys(L.data), ...Object.keys(R.data)])) {
+    if (!syncable(k)) continue;
+    const lt = lm[k] || 0, rt = rm[k] || 0, useL = !(k in R.data) || (k in L.data && lt >= rt);
+    const win = useL ? L.data[k] : R.data[k], lose = useL ? R.data[k] : L.data[k];
+    if (Math.max(lt, rt)) mtimes[k] = Math.max(lt, rt);
+    if (k === "drives") data[k] = unionBy(win, lose, d => d.t).sort((a, b) => a.t - b.t).slice(-400);
+    else if (k === "services") data[k] = unionBy(win, lose, s => s.id).filter(s => !tomb[s.id]);
+    else data[k] = win;
+  }
+  return { data, mtimes, tomb };
+}
+function localSync() {
+  const data = {};
+  for (const k of storedKeys()) if (syncable(k)) data[k] = store.get(k, null);
+  return { data, mtimes: ss.get("mtimes", {}), tomb: ss.get("tomb", {}) };
+}
+// Merge another copy into this device. Returns how many drives and service records were new here.
+function mergeIn(R) {
+  const L = localSync(), M = mergeSync(L, R), len = (o, k) => Array.isArray(o.data[k]) ? o.data[k].length : 0;
+  const changed = Object.keys(M.data).filter(k => canon(L.data[k]) !== canon(M.data[k]));
+  if (changed.length) {
+    syncApplying = true;
+    try { for (const k of changed) localStorage.setItem(KEY_PREFIX + k, JSON.stringify(M.data[k])); }
+    catch { throw new Error("Couldn't save the synced data because the browser's storage is full or blocked."); }
+    finally { syncApplying = false; }
+  }
+  ss.set("mtimes", M.mtimes); ss.set("tomb", M.tomb);
+  if (changed.length) refreshAfterData();
+  return { drives: Math.max(0, len(M, "drives") - len(L, "drives")), services: Math.max(0, len(M, "services") - len(L, "services")), M };
+}
+
+// Optional passphrase: AES-GCM with a key stretched from the passphrase, so Google only stores scrambled data.
+const b64e = u => { let s = ""; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function passKey(pass, salt) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+const syncErr = (t, extra) => Object.assign(new Error(t), { friendly: t }, extra);
+async function sealSync(M, pass) {
+  const body = { data: M.data, mtimes: M.mtimes, tomb: M.tomb }, head = { app: "myvan-assistant", kind: "sync", format: SYNC_FORMAT, appVersion: APP_VERSION, updated: new Date().toISOString() };
+  if (!pass) return JSON.stringify({ ...head, ...body });
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await passKey(pass, salt), new TextEncoder().encode(JSON.stringify(body)));
+  return JSON.stringify({ ...head, enc: { salt: b64e(salt), iv: b64e(iv), ct: b64e(new Uint8Array(ct)) } });
+}
+async function openSync(text, pass) {
+  let f;
+  try { f = JSON.parse(text); } catch { f = null; }
+  if (!f || f.app !== "myvan-assistant" || f.kind !== "sync") throw syncErr("The copy in Google Drive is damaged, so it wasn't used.", { reset: true });
+  if (f.format > SYNC_FORMAT) throw syncErr("The copy in Google Drive was made by a newer version of MyVan. Update the app on this device, then sync again.");
+  let body = f;
+  if (f.enc) {
+    if (!pass) throw syncErr("The copy in Google Drive is locked with a passphrase. Enter it below to sync.", { locked: true });
+    try {
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64d(f.enc.iv) }, await passKey(pass, b64d(f.enc.salt)), b64d(f.enc.ct));
+      body = JSON.parse(new TextDecoder().decode(pt));
+    } catch { throw syncErr("That passphrase doesn't unlock the copy in Google Drive. Check it and try again.", { locked: true, reset: true }); }
+  }
+  const isObj = x => x != null && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(body.data)) throw syncErr("The copy in Google Drive is damaged, so it wasn't used.", { reset: true });
+  return { data: body.data, mtimes: isObj(body.mtimes) ? body.mtimes : {}, tomb: isObj(body.tomb) ? body.tomb : {}, sealed: !!f.enc };
+}
+
+// Google sign-in for browser-only apps: a popup returns a short-lived token to this page's address.
+const tokenOk = () => { const t = ss.get("token"); return t && t.exp > Date.now() + 60000 ? t : null; };
+const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, "");
+let authPopup = false, authRedirected = false, signinPending = false;
+(function takeToken() {
+  if (!/[#&](access_token|error)=/.test(location.hash)) return;
+  const p = new URLSearchParams(location.hash.slice(1)), want = ss.get("state");
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!want || p.get("state") !== want) return;
+  ss.set("state", null);
+  if (p.get("access_token")) ss.set("token", { v: p.get("access_token"), exp: Date.now() + (+p.get("expires_in") || 3600) * 1000 });
+  else ss.set("authErr", p.get("error") || "error");
+  if (ss.get("redir")) { ss.set("redir", null); authRedirected = true; return; }
+  authPopup = true;
+  try { window.close(); } catch {}
+})();
+if (authPopup) { const n = document.createElement("div"); n.className = "notice"; n.setAttribute("role", "status"); n.style.cssText = "position:fixed;left:16px;right:16px;top:16px;z-index:99"; n.textContent = "Google sign-in is done. You can close this window and go back to MyVan."; document.body.appendChild(n); }
+function signIn() {
+  if (state.mode === "demo") { demoSync = { text: null }; syncMsg = null; syncNow(true); return; }
+  if (!GOOGLE_CLIENT_ID) { syncMsg = { lvl: "warn", t: "Cloud sync isn't switched on in this copy of the app yet. It needs a one-time Google setup by the app's owner." }; renderSync(); return; }
+  if (navigator.onLine === false) { syncMsg = { lvl: "warn", t: "You're offline. Connect to the internet to sign in." }; renderSync(); return; }
+  const st = b64e(crypto.getRandomValues(new Uint8Array(18))).replace(/[+/=]/g, ""), acct = ss.get("acct");
+  ss.set("state", st); ss.set("authErr", null);
+  const url = G_AUTH + "?" + new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri(), response_type: "token", scope: G_SCOPE, state: st, include_granted_scopes: "true", ...(acct && acct.email ? { login_hint: acct.email } : { prompt: "select_account" }) });
+  const w = window.open(url, "myvan-google", "popup,width=480,height=640");
+  if (!w) {
+    // Pop-ups blocked: sign in in this window instead, unless that would cut off a live connection to the van.
+    if (!state.elm) { ss.set("redir", 1); location.assign(url); return; }
+    syncMsg = { lvl: "warn", t: "The browser blocked Google's sign-in window. Allow pop-ups for this site, or disconnect from the van and try again." }; renderSync(); return;
+  }
+  ss.set("token", null); signinPending = true; syncBusy = "signin"; syncMsg = null; renderSync();
+}
+async function afterSignIn() {
+  if (!signinPending && !authRedirected) return;
+  if (!tokenOk() && !ss.get("authErr")) return;
+  signinPending = false; authRedirected = false;
+  const err = ss.get("authErr");
+  if (err) { ss.set("authErr", null); syncBusy = null; syncMsg = { lvl: "warn", t: err === "access_denied" ? "Google sign-in was cancelled. Nothing was synced." : "Google sign-in didn't finish. Try again." }; renderSync(); return; }
+  if (!tokenOk()) return;
+  syncBusy = null;
+  if (!ss.get("acct")) {
+    try { ss.set("acct", { email: await gdrive.who() }); }
+    catch { syncMsg = { lvl: "warn", t: "Signed in, but Google Drive didn't answer. Try again in a moment." }; renderSync(); return; }
+  }
+  syncNow(true);
+}
+window.addEventListener("storage", e => { if (e.key === "odxsync:token" || e.key === "odxsync:authErr") afterSignIn(); });
+// Back in the app with no answer yet (the window was closed, or Google is still loading): free the button,
+// but still accept a sign-in that finishes later.
+window.addEventListener("focus", () => { if (signinPending) setTimeout(() => { afterSignIn(); if (signinPending && syncBusy === "signin") { syncBusy = null; renderSync(); } }, 1500); });
+window.addEventListener("online", () => syncSoon());
+function signOut() {
+  const t = ss.get("token");
+  for (const k of ["token", "acct", "lastSync", "pass"]) ss.set(k, null);
+  syncMsg = { lvl: "", t: "Signed out. Your data on this device is unchanged, and the copy in Google Drive stays there." }; syncReset = false;
+  if (t && navigator.onLine !== false) fetch(G_REVOKE, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "token=" + encodeURIComponent(t.v) }).catch(() => {});
+  renderSync();
+}
+
+// Google Drive's hidden app folder. Only this app can see the file.
+const gdrive = {
+  async call(method, url, body, type) {
+    const t = tokenOk(); if (!t) throw syncErr("", { auth: true });
+    const r = await fetch(url, { method, headers: { Authorization: "Bearer " + t.v, ...(type ? { "Content-Type": type } : {}) }, body });
+    if (r.status === 401) throw syncErr("", { auth: true });
+    if (!r.ok) { const txt = await r.text().catch(() => ""); throw r.status === 403 && /quota/i.test(txt) ? syncErr("Your Google Drive is full, so the copy couldn't be saved. Free up space in Google Drive, then sync again.") : new Error("HTTP " + r.status); }
+    return r;
+  },
+  async who() { const j = await (await this.call("GET", G_API + "/about?fields=user(emailAddress)")).json(); return (j.user && j.user.emailAddress) || ""; },
+  async read() {
+    const q = encodeURIComponent(`name='${SYNC_FILE}'`), j = await (await this.call("GET", `${G_API}/files?spaces=appDataFolder&q=${q}&fields=files(id)&orderBy=modifiedTime%20desc`)).json();
+    const id = j.files && j.files[0] ? j.files[0].id : null;
+    return { id, text: id ? await (await this.call("GET", `${G_API}/files/${encodeURIComponent(id)}?alt=media`)).text() : null };
+  },
+  async write(id, text) {
+    if (id) return this.call("PATCH", `${G_UP}/files/${encodeURIComponent(id)}?uploadType=media`, text, "application/json");
+    const bd = "myvan" + Date.now().toString(36);
+    const body = `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: SYNC_FILE, parents: ["appDataFolder"] })}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${text}\r\n--${bd}--`;
+    return this.call("POST", `${G_UP}/files?uploadType=multipart`, body, "multipart/related; boundary=" + bd);
+  }
+};
+// The demo van syncs to a pretend cloud in memory. It holds only what this device sent, so nothing changes here.
+const fakeCloud = { async read() { return { id: demoSync.text ? "demo" : null, text: demoSync.text }; }, async write(id, text) { demoSync.text = text; } };
+
+function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), SYNC_DELAY); }
+function syncAfterDisconnect() { if (demoSync) { demoSync = null; syncMsg = null; } renderSync(); syncSoon(); }
+async function syncNow(manual, replace) {
+  if (authPopup || syncBusy) return;
+  const isDemo = state.mode === "demo";
+  if (isDemo) { if (!demoSync || !manual) return; }
+  else {
+    if (!ss.get("acct")) return;
+    if (!manual && state.elm) return;   // never during a drive; it runs again after disconnecting
+    if (navigator.onLine === false) { if (manual) { syncMsg = { lvl: "warn", t: "You're offline. Your changes will sync the next time you're online." }; renderSync(); } return; }
+    if (!tokenOk()) { if (manual) { signIn(); return; } syncMsg = { lvl: "", t: "Google sign-in has expired, which happens after about an hour. Tap Sync now to sign in again." }; renderSync(); return; }
+  }
+  const pass = isDemo ? "" : ss.get("pass", ""), cloud = isDemo ? fakeCloud : gdrive;
+  syncBusy = "sync"; syncMsg = null; renderSync();
+  try {
+    const { id, text } = await cloud.read();
+    const R = text && !replace ? await openSync(text, pass) : { data: {}, mtimes: {}, tomb: {}, sealed: false };
+    const n = mergeIn(R), M = n.M;
+    if (!text || replace || R.sealed !== !!pass || canon({ d: M.data, m: M.mtimes, t: M.tomb }) !== canon({ d: R.data, m: R.mtimes, t: R.tomb })) await cloud.write(id, await sealSync(M, pass));
+    if (!isDemo) ss.set("lastSync", Date.now());
+    syncReset = false;
+    syncMsg = isDemo ? { lvl: "", t: "Demo van: synced to a pretend cloud on this device. Nothing was sent to Google." }
+      : n.drives + n.services ? { lvl: "", t: `Synced. Added ${plural(n.drives, "drive")} and ${plural(n.services, "service record")} from your other devices.` } : null;
+  } catch (e) {
+    if (e && e.auth) { ss.set("token", null); syncMsg = { lvl: "", t: "Google sign-in has expired, which happens after about an hour. Tap Sync now to sign in again." }; }
+    else { syncMsg = { lvl: "warn", t: (e && e.friendly) || "Google Drive didn't answer. Check your connection and try again. Your data on this device is safe." }; syncReset = !!(e && e.reset); }
+  }
+  syncBusy = null; renderSync();
+}
+function renderSync() {
+  const out = $("#syncOut"); if (!out) return;
+  const isDemo = state.mode === "demo", acct = isDemo ? (demoSync ? { email: "the demo account" } : null) : ss.get("acct");
+  const msg = syncMsg ? `<div class="notice ${syncMsg.lvl}">${esc(syncMsg.t)}</div>` : "";
+  const reset = syncReset ? `<button class="btn small danger" id="syncReset" type="button">Replace the Google Drive copy with this device's data</button>` : "";
+  if (!acct) {
+    out.innerHTML = `<div class="row"><button class="btn" id="syncIn" type="button"${syncBusy ? " disabled" : ""}>${syncBusy === "signin" ? "Waiting for Google…" : "Sign in with Google"}</button></div>${msg}${isDemo ? `<p class="muted" style="font-size:.82rem">Demo van: signing in uses a pretend cloud and never contacts Google.</p>` : ""}`;
+    return;
+  }
+  const last = ss.get("lastSync"), pass = ss.get("pass", ""), when = isDemo ? "" : last ? (Date.now() - last < 864e5 ? timeAgo(last) : new Date(last).toLocaleDateString([], { dateStyle: "medium" })) : "not yet";
+  out.innerHTML = `<div class="row between" style="gap:10px"><div><span id="syncWho">Signed in as <b>${esc(acct.email || "your Google account")}</b></span>${isDemo ? "" : `<br><span class="muted" style="font-size:.82rem" id="syncWhen">Last synced ${esc(when)}${pass ? " · locked with a passphrase" : ""}</span>`}</div>
+      <div class="row"><button class="btn small" id="syncGo" type="button"${syncBusy ? " disabled" : ""}>${syncBusy === "sync" ? "Syncing…" : syncBusy === "signin" ? "Waiting for Google…" : "Sync now"}</button><button class="btn small" id="syncOutBtn" type="button">Sign out</button></div></div>
+    ${msg}${reset}
+    ${isDemo ? "" : `<details class="help"${syncMsg && /passphrase/.test(syncMsg.t) ? " open" : ""}><summary>Passphrase (optional)</summary><div class="prose">
+      <p>With a passphrase, your data is scrambled on this device before it goes to Google, so only your devices can read it. Use the same passphrase on each device. If you forget it, the Google Drive copy can't be read, but the data on your devices is safe.</p>
+      <form class="lookup" id="syncPassForm"><input id="syncPass" type="password" autocomplete="off" aria-label="Sync passphrase" placeholder="${pass ? "Passphrase is set" : "Choose a passphrase"}" style="flex:1 1 100%;max-width:none;text-transform:none;font-family:inherit"><button class="btn" type="submit">${pass ? "Change" : "Save"}</button>${pass ? `<button class="btn" type="button" id="syncPassOff">Remove</button>` : ""}</form>
+    </div></details>`}`;
+}
+$("#syncOut").addEventListener("click", e => {
+  const t = e.target;
+  if (t.closest("#syncIn")) signIn();
+  else if (t.closest("#syncGo")) syncNow(true);
+  else if (t.closest("#syncOutBtn")) { if (state.mode === "demo") { demoSync = null; syncMsg = null; renderSync(); } else signOut(); }
+  else if (t.closest("#syncPassOff")) { ss.set("pass", null); syncMsg = { lvl: "", t: "Passphrase removed. The next sync saves an unlocked copy." }; syncNow(true); }
+  else if (t.closest("#syncReset")) {
+    const b = t.closest("#syncReset");
+    if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Tap again to replace it"; return; }
+    syncNow(true, true);
+  }
+});
+$("#syncOut").addEventListener("submit", e => {
+  e.preventDefault();
+  const v = $("#syncPass").value;
+  if (v.length < 6) { syncMsg = { lvl: "warn", t: "Use a passphrase of at least 6 characters." }; renderSync(); return; }
+  ss.set("pass", v); syncNow(true);
+});
+
 /* ---------- tabs & wiring ---------- */
 let current = "live", parentView = "live";
 const TAB_OF = { live: "live", readings: "live", health: "health", history: "health", report: "health", codes: "codes", more: "more", checks: "more", log: "more" };
@@ -2532,10 +2785,14 @@ $("#restoreIn").onchange = async e => {
     b = parseBackup(await f.text());
   } catch (err) { backupNotice("warn", esc(err.message) + " Your current data hasn't been changed."); return; }
   const s = summarizeBackup(b.data), when = b.exported && !isNaN(new Date(b.exported)) ? new Date(b.exported).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "an unknown date";
-  $("#backupMsg").innerHTML = `<div class="confirm"><b>Restore this backup?</b><p style="font-size:.9rem">Made ${esc(when)}${b.appVersion ? " with version " + esc(b.appVersion) : ""}. It has ${esc(summaryText(s))}.</p><p style="font-size:.9rem">This replaces the drive history, maintenance, notes and settings on this device. Back up first if you might want them.</p><div class="row"><button class="btn danger" id="restoreYes" type="button">Replace my data</button><button class="btn" id="restoreNo" type="button">Cancel</button></div></div>`;
+  $("#backupMsg").innerHTML = `<div class="confirm"><b>Restore this backup?</b><p style="font-size:.9rem">Made ${esc(when)}${b.appVersion ? " with version " + esc(b.appVersion) : ""}. It has ${esc(summaryText(s))}.</p><p style="font-size:.9rem"><b>Merge</b> adds the backup's drives and service records to what's on this device and keeps your own notes and settings. <b>Replace</b> swaps everything on this device for the backup. Back up first if you might want them.</p><div class="row"><button class="btn" id="restoreMerge" type="button">Merge with my data</button><button class="btn danger" id="restoreYes" type="button">Replace my data</button><button class="btn" id="restoreNo" type="button">Cancel</button></div></div>`;
+  $("#restoreMerge").onclick = () => {
+    try { const n = mergeIn({ data: b.data, mtimes: {}, tomb: {} }); backupNotice("", n.drives + n.services ? `Merged. Added ${esc(plural(n.drives, "drive"))} and ${esc(plural(n.services, "service record"))} from the backup.` : "Merged. Nothing new was in the backup."); syncSoon(); }
+    catch (err) { backupNotice("warn", esc(err.message)); }
+  };
   $("#restoreNo").onclick = () => backupNotice("", "");
   $("#restoreYes").onclick = () => {
-    try { applyBackup(b); backupNotice("", `Restored ${esc(summaryText(s))}.`); }
+    try { applyBackup(b); backupNotice("", `Restored ${esc(summaryText(s))}.`); syncSoon(); }
     catch (err) { backupNotice("warn", esc(err.message)); }
   };
 };
@@ -2579,7 +2836,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $("#appVer").textContent = APP_VERSION;
-renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth(); renderRecalls();
+renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth(); renderRecalls(); renderSync();
+if (authRedirected) afterSignIn(); else syncNow(false);
 </script>
 </body>
 </html>
