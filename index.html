@@ -235,6 +235,18 @@ nav.tabs .railbrand{display:none}
   .top .brand img{display:none}
 }
 
+/* health report: always reads like paper, and prints on its own */
+a.btn{text-decoration:none;color:inherit}
+.check{display:flex;align-items:center;gap:10px;min-height:40px;font-size:.93rem;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+@media print{
+  body{background:#fff!important;padding:0!important}
+  header.top,nav.tabs,#sheetRoot,.no-print{display:none!important}
+  .app{padding:0!important;max-width:none!important}
+  .report{border:0!important;border-radius:0!important;padding:0!important}
+  .report h2{break-after:avoid} .report tr{break-inside:avoid}
+}
+
 /* sheet: full screen on phones, centered panel on wide screens */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:50;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
 .sheet{background:var(--bg);width:100%;height:100%;max-width:720px;overflow:auto;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px;animation:rise .25s cubic-bezier(.2,.8,.2,1)}
@@ -328,7 +340,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
   <section class="view" id="view-health" hidden>
     <p class="muted" style="font-size:.9rem;max-width:68ch">How each major part is holding up, judged from the van's own self-tests, trends across your drives, and the part ages you enter.</p>
     <div id="healthOut" class="stack"></div>
-    <div class="rows"><button class="nrow" type="button" data-go="history"><span>History across drives</span><span class="v muted" id="histCount"></span></button></div>
+    <div class="rows"><button class="nrow" type="button" data-go="history"><span>History across drives</span><span class="v muted" id="histCount"></span></button>
+      <button class="nrow" type="button" data-go="report"><span>Health report to share</span><span class="v muted">Print, PDF, email</span></button></div>
     <div class="group"><span class="label">Parts age and maintenance</span><div class="panel stack" id="maintOut" style="gap:12px"></div></div>
     <p class="muted" style="font-size:.84rem;max-width:68ch">Grades are estimates to help you plan, not a guarantee. Self-test limits come from the engine computer itself. Trend warnings get more reliable after a couple of weeks of normal driving. Confirm with the troubleshooting steps or a mechanic before buying parts.</p>
   </section>
@@ -338,6 +351,20 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
     <label class="flabel">Reading<select class="inp" id="histMetric"></select></label>
     <div class="seg full" role="group" aria-label="Date range"><button type="button" data-range="14">2 weeks</button><button type="button" data-range="30">30 days</button><button type="button" data-range="90">90 days</button><button type="button" data-range="0">All</button></div>
     <div id="histOut" class="stack"></div>
+  </section>
+
+  <!-- HEALTH REPORT (from Health) -->
+  <section class="view" id="view-report" hidden>
+    <div class="panel stack no-print" style="gap:10px">
+      <p class="muted" style="font-size:.9rem">A summary for a mechanic or a buyer: trouble codes, the report card, and maintenance history. It only includes the VIN if you choose to.</p>
+      <div id="repFresh"></div>
+      <label class="check"><input type="checkbox" id="repVin"> Include the VIN</label>
+      <label class="check"><input type="checkbox" id="repNotes"> Include service notes</label>
+      <button class="btn primary" id="repPrint" type="button">Print or save as PDF</button>
+      <div class="row" style="gap:10px"><a class="btn" id="repEmail" href="mailto:" style="flex:1">Email</a><button class="btn" id="repShare" type="button" style="flex:1">Share</button></div>
+      <p class="muted" id="repMsg" role="status" style="font-size:.86rem"></p>
+    </div>
+    <article class="report" id="reportDoc"></article>
   </section>
 
   <!-- CODES -->
@@ -452,7 +479,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 
 <script>
 "use strict";
-const APP_VERSION = "2.6"; // keep in step with VERSION in sw.js (npm run check enforces it)
+const APP_VERSION = "2.7"; // keep in step with VERSION in sw.js (npm run check enforces it)
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -2200,10 +2227,108 @@ function openComponent(id) {
   const b = $("#compGuide"); if (b) b.onclick = () => openGuide(c.guide);
 }
 
+/* ---------- shareable health report ---------- */
+// One model, rendered as HTML (screen, print, shared file) and as plain text (email).
+const REPORT_CSS = `.report{background:#fff;color:#1a1d1f;border:1px solid #dcdfdb;border-radius:16px;padding:20px;font:14px/1.45 Inter,system-ui,sans-serif}
+.report h1{font:700 1.35rem/1.2 "Space Grotesk",system-ui,sans-serif;margin:0 0 4px}
+.report h2{font:600 1rem/1.3 "Space Grotesk",system-ui,sans-serif;margin:18px 0 4px;padding-bottom:4px;border-bottom:1px solid #dcdfdb}
+.report p{margin:0}.report .sub,.report .note{color:#5b6166}.report .note{font-size:.86rem}
+.report table{width:100%;border-collapse:collapse}
+.report td{padding:6px 8px 6px 0;vertical-align:top;border-bottom:1px solid #eef0ed}
+.report td.k{color:#5b6166;width:38%}
+.report .tag{-webkit-print-color-adjust:exact;print-color-adjust:exact;display:inline-block;font-size:.76rem;font-weight:600;padding:1px 8px;border-radius:999px;background:#eceeea;color:#3b4044;white-space:nowrap;margin-left:4px}
+.report .tag.ok{background:#dcefe3;color:#1d5c37}.report .tag.warn{background:#fbeccb;color:#7a4b00}.report .tag.crit{background:#f8d9d6;color:#8a1f15}
+.report .foot{margin-top:18px;color:#5b6166;font-size:.8rem}`;
+document.head.insertAdjacentHTML("beforeend", `<style>${REPORT_CSS}</style>`);
+const reportVin = () => state.vin || store.get("vin", "");
+function reportModel(o) {
+  const now = new Date(), S = [];
+  const md = maintData(), odo = V.odo != null ? fmt("odo") + (state.mode === "demo" ? " (simulated)" : "") : num0(md.odo) != null ? (+md.odo).toLocaleString() + " mi" : "Not known";
+  S.push({ h: "Vehicle", rows: [
+    ...(o.vin && reportVin() ? [{ k: "VIN", v: reportVin() }] : []),
+    { k: "Odometer", v: odo },
+    ...(state.mode === "demo" ? [{ k: "Source", v: "Demo van (simulated data)" }] : [])] });
+  // Summary
+  const evs = COMPONENTS.map(c => ({ c, e: evalComponent(c) }));
+  const nBad = evs.filter(x => GR[x.e.grade].r >= 3).length, nWatch = evs.filter(x => x.e.grade === "watch").length, nKnown = evs.filter(x => x.e.grade !== "unknown").length;
+  const c = state.codes, nCodes = c ? c.stored.length + c.pending.length + c.permanent.length : null;
+  const dr = drives().filter(d => d.km != null && d.fuelL > 0), kmT = dr.reduce((a, d) => a + d.km, 0), lT = dr.reduce((a, d) => a + d.fuelL, 0);
+  S.push({ h: "Summary", rows: [
+    { k: "Overall", v: !nKnown ? "Not enough data to grade yet" : nBad ? `${nBad} part${nBad > 1 ? "s" : ""} need${nBad > 1 ? "" : "s"} attention` : nWatch ? `${nWatch} part${nWatch > 1 ? "s" : ""} to keep an eye on` : "Everything graded looks healthy", tag: nKnown ? { t: nBad ? "Attention" : nWatch ? "Watch" : "Good", c: nBad ? "crit" : nWatch ? "warn" : "ok" } : null },
+    { k: "Check engine light", v: state.mil == null ? "Not read" : state.mil ? "On" : "Off", tag: state.mil ? { t: "On", c: "warn" } : null },
+    { k: "Trouble codes", v: nCodes == null ? "Not read" : nCodes ? `${nCodes} (${c.stored.length} stored, ${c.pending.length} pending, ${c.permanent.length} permanent)` : "None" },
+    { k: "Drives recorded", v: String(drives().length) + (state.mode === "demo" ? " (demo history)" : "") },
+    ...(dr.length ? [{ k: "Average fuel economy", v: `${econText(kmT, lT)} over ${dr.length} trip${dr.length > 1 ? "s" : ""}` }] : [])] });
+  // Codes
+  if (c) {
+    const rows = [];
+    for (const [list, kind] of [[c.stored, "Stored"], [c.pending, "Pending"], [c.permanent, "Permanent"]]) for (const code of list) { const g = guideFor(code); rows.push({ k: code, v: g.t, tag: { t: kind, c: kind === "Pending" ? "warn" : "crit" }, sub: "Advice: " + SEV[g.sev] }); }
+    S.push({ h: "Trouble codes", rows, empty: "No trouble codes.", note: `Read ${state.codesAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.` });
+  } else S.push({ h: "Trouble codes", rows: [], empty: "Codes weren't read before this report was made." });
+  if (state.monitors) S.push({ h: "Readiness monitors", rows: state.monitors.filter(m => m.avail).map(m => ({ k: m.n, v: m.done ? "Ready" : "Not ready", tag: { t: m.done ? "Ready" : "Not ready", c: m.done ? "ok" : "warn" } })), note: "Monitors reset to Not ready after codes are cleared or the battery is disconnected." });
+  S.push({ h: "Report card", rows: evs.map(({ c, e }) => ({ k: c.name + (c.sub ? ", " + c.sub : ""), v: "", tag: { t: gradeText(c, e.grade), c: GR[e.grade].c }, sub: e.why[0] || (e.grade === "good" ? "Self-tests and recent drives look normal." : "") })) });
+  const parts = MAINT.map(it => ({ it, st: maintStatus(it.id), d: md.items[it.id] || {} })).filter(x => x.st || x.d.lastDate || x.d.lastMi);
+  if (parts.length) S.push({ h: "Parts age", rows: parts.map(({ it, st, d }) => ({ k: it.name, v: [d.lastDate ? "Last done " + new Date(d.lastDate + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "", num0(d.lastMi) != null ? "at " + (+d.lastMi).toLocaleString() + " mi" : ""].filter(Boolean).join(" ") || "—", tag: st ? { t: st.grade === "plan" ? "Due" : st.grade === "watch" ? "Due soon" : "OK", c: GR[st.grade].c } : null })) });
+  const svc = services().sort(byNewest);
+  S.push({ h: "Service history", rows: svc.map(e => ({ k: e.date ? new Date(e.date + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "No date", v: partName(e.part), sub: [num0(e.mi) != null ? (+e.mi).toLocaleString() + " mi" : "", money(e.cost), o.notes ? e.note : ""].filter(Boolean).join(" · ") })), empty: "No services logged." });
+  return { title: "Vehicle health report", made: now, sections: S };
+}
+const madeText = m => `Made ${m.made.toLocaleString([], { dateStyle: "long", timeStyle: "short" })} with MyVan Assistant ${APP_VERSION}`;
+const REPORT_FOOT = "Built from the van's own OBD-II data and the owner's maintenance records. Grades are estimates to help plan repairs, not a guarantee. Have a mechanic confirm before buying parts or a vehicle. Honda-only systems (ABS, airbags, body, transmission detail) aren't covered.";
+function reportBodyHtml(m) {
+  const tag = t => t ? ` <span class="tag ${t.c}">${esc(t.t)}</span>` : "";
+  return `<h1>${esc(m.title)}</h1><p class="sub">${esc(madeText(m))}</p>` + m.sections.map(sct => `<h2>${esc(sct.h)}</h2>` +
+    (sct.rows.length ? `<table>${sct.rows.map(r => `<tr><td class="k">${esc(r.k)}</td><td>${r.tag && r.tag.t === r.v ? "" : esc(r.v)}${tag(r.tag)}${r.sub ? `<div class="note">${esc(r.sub)}</div>` : ""}</td></tr>`).join("")}</table>` : `<p class="note">${esc(sct.empty || "None.")}</p>`) +
+    (sct.note ? `<p class="note" style="margin-top:4px">${esc(sct.note)}</p>` : "")).join("") + `<p class="foot">${esc(REPORT_FOOT)}</p>`;
+}
+function reportFileHtml(m) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(m.title)}</title><style>body{margin:0;padding:16px;background:#f3f4f1}.report{max-width:760px;margin:0 auto}@media print{body{background:#fff;padding:0}.report{border:0;padding:0}}${REPORT_CSS}</style></head><body><article class="report">${reportBodyHtml(m)}</article></body></html>`;
+}
+function reportText(m) {
+  const lines = [m.title.toUpperCase(), madeText(m), ""];
+  for (const sct of m.sections) {
+    lines.push(sct.h.toUpperCase());
+    if (!sct.rows.length) lines.push(sct.empty || "None.");
+    for (const r of sct.rows) lines.push(`- ${r.k}: ${[r.v, r.tag && r.tag.t !== r.v ? "[" + r.tag.t + "]" : ""].filter(Boolean).join(" ")}${r.sub ? " (" + r.sub + ")" : ""}`);
+    if (sct.note) lines.push(sct.note);
+    lines.push("");
+  }
+  lines.push(REPORT_FOOT);
+  return lines.join("\n");
+}
+// Email apps receive the report as the message body; very long bodies get trimmed.
+const MAIL_MAX = 7000;
+function reportMailto(m) {
+  const subject = m.title + (reportVin() && $("#repVin").checked ? " · " + reportVin() : "");
+  let body = reportText(m), cut = false;
+  const url = b => "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(b);
+  while (url(body).length > MAIL_MAX) { body = body.slice(0, Math.floor(body.length * .85)); cut = true; }
+  if (cut) body = body.replace(/\n[^\n]*$/, "") + "\n\n(Shortened to fit an email. Use Print or save as PDF, or Share, for the full report.)";
+  return url(body);
+}
+const reportOpts = () => ({ vin: $("#repVin").checked, notes: $("#repNotes").checked });
+const reportFileName = () => "myvan-health-report-" + new Date().toISOString().slice(0, 10) + ".html";
+const canShareFiles = () => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "r.html", { type: "text/html" })] })); } catch { return false; } };
+function renderReport() {
+  if (!$("#repVin").dataset.init) { $("#repVin").dataset.init = 1; $("#repVin").checked = store.get("repVin", true); $("#repNotes").checked = store.get("repNotes", false); }
+  const m = reportModel(reportOpts());
+  $("#reportDoc").innerHTML = reportBodyHtml(m);
+  $("#repEmail").href = reportMailto(m);
+  $("#repShare").textContent = canShareFiles() ? "Share" : "Download";
+  const stale = [!state.codes && "trouble codes", !state.m06 && "self-tests"].filter(Boolean);
+  $("#repFresh").innerHTML = stale.length ? `<div class="notice warn"><b>Not read yet: ${stale.join(" and ")}.</b> ${state.elm ? `<button class="btn small" id="repRefresh" type="button" style="margin-left:6px">Read them now</button>` : "Connect to the van and read them so the report is complete."}</div>` : "";
+  const rb = $("#repRefresh");
+  if (rb) rb.onclick = async () => {
+    rb.disabled = true; rb.textContent = "Reading…";
+    try { if (!state.codes) await readCodes(); if (!state.monitors) await readMonitors(); if (!state.m06) await readMode06(); } catch {}
+    if (current === "report") renderReport();
+  };
+}
+
 /* ---------- tabs & wiring ---------- */
 let current = "live", parentView = "live";
-const TAB_OF = { live: "live", readings: "live", health: "health", history: "health", codes: "codes", more: "more", checks: "more", log: "more" };
-const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", history: "Drive history", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
+const TAB_OF = { live: "live", readings: "live", health: "health", history: "health", report: "health", codes: "codes", more: "more", checks: "more", log: "more" };
+const TITLES = { live: "MyVan Assistant", readings: "All readings", health: "Health", history: "Drive history", report: "Health report", codes: "Trouble codes", more: "More", checks: "Alerts this session", log: "Session log" };
 // Each screen change is a history entry ({ v, d: depth }), so back returns to the previous screen.
 // Tapping Home rewinds to the first entry; back on Home leaves the app.
 function show(v, fromHistory) {
@@ -2224,6 +2349,7 @@ function show(v, fromHistory) {
   if (v === "checks") renderChecks();
   if (v === "health") renderHealth();
   if (v === "history") renderHistory();
+  if (v === "report") renderReport();
   if (v === "more") { renderVehicle(); renderMonitors(); updateBadges(); }
   if (v === "log") { renderLogInfo(); $("#traffic").textContent = trafficLines.slice(-20).join("\n") || "Nothing yet."; }
   window.scrollTo(0, 0);
@@ -2253,6 +2379,23 @@ document.addEventListener("click", e => {
   const gd = t.closest("#strip [data-g]"); if (gd) openGuide(gd.dataset.g);
 });
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => show(b.dataset.v));
+$("#repVin").onchange = e => { store.set("repVin", e.target.checked); renderReport(); };
+$("#repNotes").onchange = e => { store.set("repNotes", e.target.checked); renderReport(); };
+$("#repPrint").onclick = () => { renderReport(); window.print(); };
+$("#repEmail").onclick = () => { renderReport(); $("#repMsg").textContent = "Opening your email app with the report in the message."; };
+$("#repShare").onclick = async () => {
+  const m = reportModel(reportOpts()), html = reportFileHtml(m), name = reportFileName();
+  if (canShareFiles()) {
+    try { await navigator.share({ title: m.title, text: m.title + ". " + madeText(m) + ".", files: [new File([html], name, { type: "text/html" })] }); $("#repMsg").textContent = ""; }
+    catch (e) { if (e && e.name !== "AbortError") $("#repMsg").textContent = "Couldn't share. Try Print or save as PDF instead."; }
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([html], { type: "text/html" })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  $("#repMsg").textContent = inFrame ? "Downloads are blocked inside Claude. Use Print or save as PDF." : "Report saved as a web page. Open it in any browser, or attach it to an email.";
+};
 $("#histMetric").onchange = e => { histMetric = e.target.value; store.set("histMetric", histMetric); renderHistory(); };
 document.querySelectorAll("#view-history [data-range]").forEach(b => b.onclick = () => { histRange = b.dataset.range; store.set("histRange", histRange); renderHistory(); });
 $("#discBtn").onclick = () => disconnect("");
