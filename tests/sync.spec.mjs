@@ -227,6 +227,9 @@ test("changes made while connected to the van wait until it disconnects", async 
   await page.waitForTimeout(5000);
   expect(cloudData(cloud)["note:P0300"]).toBeUndefined();
   await tab(page, "More");
+  await expect(page.locator("#syncPaused")).toContainText("automatic sync is paused");
+  await expect(page.locator("#syncTip")).toContainText("tap Sync now");
   await page.locator("#discBtn").click();
+  await expect(page.locator("#syncPaused")).toHaveCount(0);
   await expect.poll(() => cloud.text && cloudData(cloud)["note:P0300"], { timeout: 10000 }).toBe("Checked plugs");
 });
