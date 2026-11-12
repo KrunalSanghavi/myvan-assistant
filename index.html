@@ -2418,8 +2418,9 @@ function renderReport() {
 }
 
 /* ---------- cloud sync (the owner's own Google Drive; nothing is sent until they sign in) ---------- */
-// The client ID identifies this app to Google. It isn't a secret. Tests set window.MYVAN_GOOGLE_CLIENT_ID.
-const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID || "";
+// The client ID identifies this app to Google (OAuth "Web application" client). It isn't a secret.
+// Tests override it with window.MYVAN_GOOGLE_CLIENT_ID.
+const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID ?? "57823011336-c57a4ibllmqcug31a5b56841jkcfhva6.apps.googleusercontent.com";
 const G_AUTH = "https://accounts.google.com/o/oauth2/v2/auth", G_API = "https://www.googleapis.com/drive/v3", G_UP = "https://www.googleapis.com/upload/drive/v3", G_REVOKE = "https://oauth2.googleapis.com/revoke";
 const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata", SYNC_FILE = "myvan-sync.json", SYNC_FORMAT = 1, SYNC_DELAY = 4000;
 // What travels between devices. Display settings (units, theme, pins, views) stay per device.
