@@ -232,3 +232,44 @@ test("if a saved Gemini model stops working, the app switches to one the key can
   await tab(page, "More");
   await expect(page.locator("#aiModel")).toHaveValue("gemini-3.1-flash");
 });
+
+// Gemini says the model is busy (503 "high demand"): not a bad model name.
+const busyGemini = (page, allBusy) => page.addInitScript(all => {
+  window.__gem = [];
+  const f = window.fetch;
+  window.fetch = async (u, o) => {
+    u = String(u); if (!u.includes("generativelanguage")) return f(u, o);
+    window.__gem.push(u.replace(/^.*\/v1beta\//, ""));
+    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    if (u.includes("/models?")) return json(200, { models: ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"].map(n => ({ name: "models/" + n, supportedGenerationMethods: ["generateContent"] })) });
+    if (all || u.includes("gemini-3.8-flash")) return json(503, { error: { code: 503, message: "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.", status: "UNAVAILABLE" } });
+    return json(200, { candidates: [{ content: { parts: [{ text: "Answer from the backup model." }] } }] });
+  };
+}, !!allBusy);
+const useGemini38 = page => page.evaluate(k => localStorage.setItem("odxai:cfg", JSON.stringify({ provider: "gemini", keys: { gemini: k }, models: { gemini: "gemini-3.8-flash" } })), GKEY);
+
+test("when the Gemini model is busy, the app answers with another model and keeps the saved one", async ({ page }) => {
+  await busyGemini(page);
+  await seedStorage(page, SEED);
+  await useGemini38(page);
+  await page.reload();
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#aiAnswer")).toContainText("Answer from the backup model.");
+  await expect(page.locator("#aiAnswer")).toContainText("From Gemini · gemini-2.5-flash");
+  await expect(page.locator("#aiNote")).toContainText("gemini-3.8-flash was busy, so this answer came from gemini-2.5-flash");
+  expect(await page.evaluate(() => window.__gem)).toEqual(["models/gemini-3.8-flash:generateContent", "models?pageSize=200", "models/gemini-2.5-flash:generateContent"]);
+  await tab(page, "More");
+  await expect(page.locator("#aiModel")).toHaveValue("gemini-3.8-flash");
+});
+
+test("when every Gemini model is busy, the app says so instead of blaming the model name", async ({ page }) => {
+  await busyGemini(page, true);
+  await seedStorage(page, SEED);
+  await useGemini38(page);
+  await page.reload();
+  await openAsk(page);
+  await askQ(page, "Is a 2018 Odyssey good for towing a small camper?");
+  await expect(page.locator("#view-ask")).toContainText("Gemini is busy right now");
+  await expect(page.locator("#view-ask")).not.toContainText("doesn't recognise");
+});
