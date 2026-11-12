@@ -17,7 +17,7 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [x] Trip and fuel economy: MPG estimated from airflow and speed, cost per trip, idle time. ([#8](https://github.com/KrunalSanghavi/myvan-assistant/issues/8))
 - [x] Maintenance Minder companion: log each service with date, mileage and cost, with reminders when parts come due. ([#9](https://github.com/KrunalSanghavi/myvan-assistant/issues/9))
 - [ ] Shareable health report page for a mechanic or a sale listing. ([#10](https://github.com/KrunalSanghavi/myvan-assistant/issues/10))
-- [ ] A history screen comparing any reading across drives. ([#11](https://github.com/KrunalSanghavi/myvan-assistant/issues/11))
+- [x] A history screen comparing any reading across drives. ([#11](https://github.com/KrunalSanghavi/myvan-assistant/issues/11))
 - [ ] "Ask about my van": plain-English questions answered from your data using an AI model. ([#12](https://github.com/KrunalSanghavi/myvan-assistant/issues/12))
 
 ## Later: deeper coverage (v3)
