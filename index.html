@@ -35,8 +35,8 @@
   --ok:#4CC3D9; --ok-bg:#12303A; --warn:#F2B33D; --warn-bg:#2A2214; --warn-line:#4A3A1A; --crit:#FF7759; --crit-bg:#3A1A14; --crit-line:#5C2A20;
   --band:rgba(76,195,217,.15); --track:#2A3238; --spark:#7FD6E6; --scrim:rgba(0,0,0,.62); --bar:#121619; color-scheme:dark }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+html{-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
+body{overscroll-behavior-y:none;margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 50%,transparent);outline-offset:2px}
 .app{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 calc(96px + env(safe-area-inset-bottom,0px))}
@@ -101,6 +101,9 @@ details.help.recall .prose{padding:0 16px 14px}
 .choice b{display:block;font-weight:600}
 .choice span{font-size:.86rem;color:var(--muted)}
 .choice::after{content:"›";font-size:1.4rem;color:var(--muted);line-height:1}
+.reconn{display:flex;gap:12px;align-items:center;justify-content:center;min-height:56px;font-size:1.02rem}
+.connect .info{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted);font:600 1rem/1 var(--f-body);cursor:pointer}
+.connect .info[aria-expanded="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 .choice select{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:1px 4px}
 .port{font-family:var(--f-mono);font-size:.78rem;line-height:1.45;background:var(--surface-2);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;color:var(--muted)}
 .log-lines{font-family:var(--f-mono);font-size:.78rem;max-height:220px;overflow:auto;background:var(--surface-2);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all}
@@ -922,9 +925,9 @@ function demoTransport() {
 
 /* ---------- real transports ---------- */
 const BLE_SVCS = [0xFFE0, 0xFFF0, 0x18F0, "e7810a71-73ae-499d-8c15-faa9aef0c3f2"];
-async function bleTransport() {
-  const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SVCS });
-  const server = await dev.gatt.connect();
+async function bleTransport(known) {
+  const dev = known || await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SVCS });
+  const server = await Promise.race([dev.gatt.connect(), sleep(10000).then(() => { throw new Error("NOREACH"); })]);
   let rx = null, tx = null;
   for (const s of BLE_SVCS) {
     let svc; try { svc = await server.getPrimaryService(s); } catch { continue; }
@@ -934,7 +937,7 @@ async function bleTransport() {
     if (rx && tx) break;
   }
   if (!rx || !tx) { dev.gatt.disconnect(); throw new Error("This Bluetooth device doesn't look like an OBD adapter. Pick the adapter (often named OBDII, IOS-Vlink, vLinker or OBDLink)."); }
-  const t = { name: dev.name || "Bluetooth adapter", onData: null, onClose: null };
+  const t = { name: dev.name || "Bluetooth adapter", onData: null, onClose: null, dev };
   const dec = new TextDecoder(), enc = new TextEncoder();
   await rx.startNotifications();
   rx.addEventListener("characteristicvaluechanged", e => t.onData && t.onData(dec.decode(e.target.value)));
@@ -949,8 +952,8 @@ async function bleTransport() {
   t.close = () => { try { dev.gatt.disconnect(); } catch {} };
   return t;
 }
-async function serialTransport(baud) {
-  const port = await navigator.serial.requestPort();
+async function serialTransport(baud, known) {
+  const port = known || await navigator.serial.requestPort();
   await port.open({ baudRate: baud });
   const writer = port.writable.getWriter(), reader = port.readable.getReader();
   const dec = new TextDecoder(), enc = new TextEncoder();
@@ -966,26 +969,53 @@ async function serialTransport(baud) {
 
 /* ---------- connection flow ---------- */
 const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
-let connectMsg = "", connectBusy = false;
+let connectMsg = "", connectBusy = false, connHelp = false;
+// The last adapter, so the connect screen can offer one-tap Reconnect. Device-specific: not in backups or sync.
+const lastAdapter = () => { try { return JSON.parse(localStorage.getItem("odxdev:last")) || null; } catch { return null; } };
+const saveAdapter = a => { try { localStorage.setItem("odxdev:last", JSON.stringify(a)); } catch {} };
+// A device or port this browser already has permission for, so no picker is needed.
+async function knownDevice(kind) {
+  const last = lastAdapter();
+  try {
+    if (kind === "ble" && navigator.bluetooth && navigator.bluetooth.getDevices) { const ds = await navigator.bluetooth.getDevices(); return ds.find(d => last && d.id === last.id) || ds.find(d => last && d.name === last.name) || null; }
+    if (kind === "usb" && navigator.serial && navigator.serial.getPorts) return (await navigator.serial.getPorts())[0] || null;
+  } catch {}
+  return null;
+}
+let autoTries = 0;
+async function autoReconnect(dev) {
+  await disconnect("Bluetooth dropped. Reconnecting…", true);
+  for (autoTries = 1; autoTries <= 3; autoTries++) {
+    renderConnect(`Bluetooth dropped. Reconnecting to ${dev.name || "the adapter"} (try ${autoTries} of 3)…`);
+    await sleep(state.mode === "ble" && dev.__fake ? 50 : 1500 * autoTries);
+    if (state.elm || connectBusy) return;
+    await connect("ble", { dev, auto: true });
+    if (state.elm) { autoTries = 0; return; }
+  }
+  autoTries = 0; connectMsg = "Lost the adapter. Tap Reconnect when you're back in range."; renderConnect();
+}
 
-async function connect(kind) {
+// opt.dev: a Bluetooth device to reuse (reconnect). opt.reconnect: use the remembered adapter, without the picker if allowed.
+async function connect(kind, opt = {}) {
   if (connectBusy) return;
-  connectBusy = true; connectMsg = ""; renderConnect("Opening adapter…");
+  connectBusy = true; connectMsg = ""; if (!opt.auto) renderConnect("Opening adapter…");
   let t;
   try {
     if (kind === "demo") { t = demoTransport(); demoDrives = seedDemoDrives(); state.m06 = null; }   // the demo reads its own self-tests
     else if (kind === "ble") {
       if (!navigator.bluetooth) throw new Error("NOAPI_BLE");
-      t = await bleTransport();
+      t = await bleTransport(opt.dev || (opt.reconnect ? await knownDevice("ble") : null));
     } else {
       if (!navigator.serial) throw new Error("NOAPI_USB");
-      t = await serialTransport(Number($("#baud") ? $("#baud").value : 38400));
+      t = await serialTransport(Number($("#baud") ? $("#baud").value : (lastAdapter() || {}).baud || 38400), opt.reconnect ? await knownDevice("usb") : null);
     }
   } catch (e) {
-    connectBusy = false; connectMsg = friendlyError(e, kind); renderConnect(); return;
+    connectBusy = false; connectMsg = opt.auto ? "" : friendlyError(e, kind); if (!opt.auto) renderConnect(); return;
   }
   state.mode = kind; state.conn = t; state.elm = new Elm(t);
-  t.onClose = () => disconnect("The adapter disconnected.");
+  if (kind !== "demo") saveAdapter({ kind, name: t.name, id: t.dev ? t.dev.id : null, baud: kind === "usb" ? Number($("#baud") ? $("#baud").value : 38400) : null });
+  // Bluetooth that drops on its own gets a few automatic reconnect tries; USB and the demo just disconnect.
+  t.onClose = () => { if (kind === "ble" && t.dev && state.conn === t) autoReconnect(t.dev); else disconnect("The adapter disconnected."); };
   try {
     renderConnect("Resetting adapter…");
     const ver = await state.elm.send("ATZ", 5000); state.elmVer = (ver.match(/ELM327\s*v?[\d.]+/i) || ["ELM327"])[0];
@@ -1015,6 +1045,7 @@ async function connect(kind) {
 function friendlyError(e, kind) {
   const m = String(e && (e.message || e.name) || e);
   if (e && e.name === "NotFoundError") return "No adapter was picked. Make sure the adapter is plugged in and its light is on, then try again.";
+  if (m === "NOREACH") return "Couldn't reach the adapter. Check it's plugged in with its light on and the ignition is on, then try again. If it still fails, pick it from the list with Bluetooth LE adapter.";
   if (m === "NOAPI_BLE") return "This browser can't use Bluetooth. Use Chrome on Android, Chrome or Edge on a laptop, or Bluefy on iPhone.";
   if (m === "NOAPI_USB") return "This browser can't use USB serial. Use Chrome or Edge on a laptop.";
   if (e && (e.name === "SecurityError" || /permission|policy|disallowed/i.test(m))) return inFrame
@@ -1029,7 +1060,7 @@ function onConnected() {
   $("#connectBox").hidden = true; $("#liveBox").hidden = false;
   buildTiles(); renderVehicle(); renderMonitors(); renderSync();
 }
-async function disconnect(msg) {
+async function disconnect(msg, quiet) {
   state.polling = false;
   try { endDrive(); } catch {}
   const t = state.conn, elm = state.elm;
@@ -1039,7 +1070,7 @@ async function disconnect(msg) {
   if (t) { t.onClose = null; try { await t.close(); } catch {} }
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
-  connectMsg = msg || ""; renderConnect(); renderVehicle();
+  connectMsg = msg || ""; if (!quiet) renderConnect(); renderVehicle();
   syncAfterDisconnect();
 }
 
@@ -1361,39 +1392,42 @@ function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 
 
 function renderConnect(busy) {
   const box = $("#connectBox");
-  const frameNote = inFrame ? `<div class="notice warn"><b>You're viewing this inside Claude.</b> The demo works here, but browsers block Bluetooth and USB inside embedded pages. To connect your adapter, open the saved HTML file in Chrome on your laptop, or host it at an https address for your phone.</div>` : "";
+  const last = lastAdapter(), lastKind = last && last.kind === "usb" ? "usb" : "ble";
+  const frameNote = inFrame ? `<div class="notice warn">Bluetooth and USB are blocked inside Claude. Open the app in Chrome to connect. The demo works here.</div>` : "";
+  const ICO_BLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg>`;
   box.innerHTML = `<div class="connect">
     <div style="display:flex;flex-direction:column;gap:14px">
-      <h2>Connect to the van</h2>
-      <p class="muted" style="max-width:56ch">Plug an ELM327-compatible adapter into the OBD-II port under the dash, left of the steering column. Turn the ignition on, or start the engine for live readings.</p>
+      <div class="row between" style="align-items:center"><h2>Connect</h2><button class="info" type="button" id="connInfo" aria-label="How to connect" aria-expanded="${connHelp}" aria-controls="connHelp">i</button></div>
+      <div class="notice" id="connHelp" ${connHelp ? "" : "hidden"}>Plug the adapter into the OBD-II port under the dash, left of the steering column. Turn the ignition on, or start the engine for live readings. Then pick the adapter below.<br><label style="display:inline-flex;gap:6px;align-items:center;margin-top:8px;font-size:.86rem">USB adapter speed <select id="baud"><option>38400</option><option>115200</option><option>9600</option></select></label></div>
       ${frameNote}
       ${busy ? `<div class="notice" role="status">${esc(busy)}</div>` : ""}
       ${connectMsg ? `<div class="notice warn" role="alert">${esc(connectMsg)}</div>` : ""}
+      ${last && !inFrame ? `<button class="btn primary reconn" type="button" id="reconnBtn" ${busy ? "disabled" : ""}>${lastKind === "ble" ? ICO_BLE.replace("<svg", '<svg width="22" height="22"') : ""}Reconnect to ${esc(last.name || "the adapter")}</button>` : ""}
       <div class="choices">
-        <button class="choice" data-c="ble" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg></span><div><b>Bluetooth LE adapter</b><span>Phone or laptop. Vgate iCar Pro BLE, OBDLink CX, vLinker and similar.</span></div></button>
-        <button class="choice" data-c="usb" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14M8 7l4-4 4 4M7 12v2h5M17 10v3h-5"/><circle cx="12" cy="19" r="2"/></svg></span><div><b>USB adapter</b><span>Laptop with Chrome or Edge. <label style="white-space:nowrap">Speed <select id="baud" onclick="event.stopPropagation()"><option>38400</option><option>115200</option><option>9600</option></select></label></span></div></button>
-        <button class="choice" data-c="demo" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5v14l11-7z"/></svg></span><div><b>Try the demo van</b><span>A simulated Odyssey with a lean bank 2 and an EVAP code, so you can explore every screen.</span></div></button>
+        <button class="choice" data-c="ble" ${busy ? "disabled" : ""}><span class="ico">${ICO_BLE}</span><div><b>Bluetooth LE adapter</b><span>Phone or laptop</span></div></button>
+        <button class="choice" data-c="usb" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14M8 7l4-4 4 4M7 12v2h5M17 10v3h-5"/><circle cx="12" cy="19" r="2"/></svg></span><div><b>USB adapter</b><span>Laptop with Chrome or Edge</span></div></button>
+        <button class="choice" data-c="demo" ${busy ? "disabled" : ""}><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5v14l11-7z"/></svg></span><div><b>Try the demo van</b><span>Simulated, to explore</span></div></button>
       </div>
-    </div>
-    <div class="panel" style="display:flex;flex-direction:column;gap:10px;min-width:0">
-      <span class="label">What gets checked</span>
-      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:.92rem">
-        <li>${PARAMS.filter(p => p.group !== "hidden").length} live engine readings with normal ranges for this V6</li>
-        <li>Stored, pending and permanent trouble codes, with step-by-step checks</li>
-        <li>Out-of-range warnings, such as fuel trims, charging voltage, idle and coolant warm-up</li>
-        <li>Readiness monitors, VIN and a recordable session log</li>
-      </ul>
-      <span class="label" style="margin-top:6px">Adapter commands used</span>
-      <div class="port">ATZ  ATE0  ATSP0     reset, auto protocol
+      <details class="help"><summary>What the app reads</summary><div class="prose">
+        <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:.92rem">
+          <li>${PARAMS.filter(p => p.group !== "hidden").length} live engine readings with normal ranges for this V6</li>
+          <li>Stored, pending and permanent trouble codes, with step-by-step checks</li>
+          <li>Warnings such as fuel trims, charging voltage, idle and coolant warm-up</li>
+          <li>Self-tests, readiness monitors, VIN and a recordable session log</li>
+        </ul>
+        <div class="port" style="margin-top:10px">ATZ  ATE0  ATSP0     reset, auto protocol
 0100 … 01A0       supported readings
 01xx              live data, odometer (A6)
 03 / 07 / 0A      stored / pending / permanent
 02xx00            freeze frame
 04                clear codes
-0902  ATRV        VIN, battery voltage</div>
+0902  ATRV        VIN, battery voltage</div></div></details>
     </div>
   </div>`;
+  if (last && last.baud) { const b = $("#baud"); if (b) b.value = String(last.baud); }
   box.querySelectorAll("[data-c]").forEach(b => b.onclick = () => connect(b.dataset.c));
+  const r = $("#reconnBtn"); if (r) r.onclick = () => connect(lastKind, { reconnect: true });
+  $("#connInfo").onclick = () => { connHelp = !connHelp; renderConnect(busy); };
 }
 
 function engineState() {
@@ -3541,6 +3575,7 @@ $("#repShare").onclick = async () => {
 $("#histMetric").onchange = e => { histMetric = e.target.value; store.set("histMetric", histMetric); renderHistory(); };
 document.querySelectorAll("#view-history [data-range]").forEach(b => b.onclick = () => { histRange = b.dataset.range; store.set("histRange", histRange); renderHistory(); });
 $("#discBtn").onclick = () => disconnect("");
+addEventListener("beforeunload", e => { if (state.elm && state.mode !== "demo") { e.preventDefault(); e.returnValue = ""; } });
 $("#finderRow").onclick = openFinder;
 $("#readBtn").onclick = readCodes;
 $("#clearBtn").onclick = () => {
