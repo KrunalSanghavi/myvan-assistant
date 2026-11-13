@@ -601,6 +601,14 @@ const PARAMS = [
 ];
 const P = Object.fromEntries(PARAMS.map(p => [p.key, p]));
 const BY_PID = Object.fromEntries(PARAMS.filter(p => p.pid != null).map(p => [p.pid, p]));
+// Some cars report these on the newer multi-sensor PIDs instead (66 airflow, 67 coolant, 68 intake air).
+// Byte A says which sensors are fitted; the first fitted sensor is used.
+const firstSensor = b => { for (let i = 0; i < 6; i++) if (b[0] & (1 << i)) return i; return 0; };
+const altTemp = b => { const i = firstSensor(b); return b.length > 1 + i ? b[1 + i] - 40 : NaN; };
+Object.assign(P.ect, { alt: 0x67, altN: 2, altF: altTemp, altEnc: v => [1, ...u8(v + 40), 0] });
+Object.assign(P.iat, { alt: 0x68, altN: 2, altF: altTemp, altEnc: v => [1, ...u8(v + 40), 0, 0, 0, 0, 0] });
+Object.assign(P.maf, { alt: 0x66, altN: 3, altF: b => { const i = firstSensor(b); return b.length > 2 + i * 2 ? (b[1 + i * 2] * 256 + b[2 + i * 2]) / 32 : NaN; }, altEnc: v => [1, ...u16(v * 32), 0, 0] });
+for (const p of PARAMS) p.o = { pid: p.pid, n: p.n, f: p.f, enc: p.enc };   // the standard PID, restored on every connect
 const GROUPS = ["Engine", "Temperatures", "Fuel and air", "Electrical"];
 
 function conv(p, v) {
@@ -746,6 +754,7 @@ function guideFor(code) {
 }
 
 /* ---------- state ---------- */
+const VT = {};              // when each value last came in
 const V = {};               // latest values
 const H = {};               // history per key
 const HL = {};              // status level per sample: 0 normal, 1 warning, 2 critical
@@ -889,7 +898,7 @@ const demo = {
     if (cmd.startsWith("02") && cmd.length === 6) {
       const pid = parseInt(cmd.slice(2, 4), 16);
       if (this.cleared || cmd.slice(4) !== "00") return "NO DATA";
-      const pids = [0x02, ...Object.keys(this.ff).map(k => P[k].pid)];
+      const pids = [0x02, ...Object.keys(this.ff).map(k => P[k].o.pid)];
       if (pid % 0x20 === 0) {
         const b = [0, 0, 0, 0];
         for (const q of pids) if (q > pid && q <= pid + 32) { const i = q - pid - 1; b[i >> 3] |= 0x80 >> (i & 7); }
@@ -897,26 +906,27 @@ const demo = {
         return "42" + hex2(pid) + "00" + toHex(b);
       }
       if (pid === 0x02) return "420200" + toHex(c.stored[0] || [0, 0]);
-      const k = Object.keys(this.ff).find(k => P[k].pid === pid);
-      return k ? "42" + hex2(pid) + "00" + toHex(P[k].enc(this.ff[k])) : "NO DATA";
+      const k = Object.keys(this.ff).find(k => P[k].o.pid === pid);
+      return k ? "42" + hex2(pid) + "00" + toHex(P[k].o.enc(this.ff[k])) : "NO DATA";
     }
     if (cmd.startsWith("01") && cmd.length === 4) {
       const pid = parseInt(cmd.slice(2), 16);
-      if (pid % 0x20 === 0 && pid <= 0xC0) return "41" + hex2(pid) + toHex(this.bitmask(pid));
+      // tcmFirst: a transmission computer answers first with a short list of its own (tests combining the lists).
+      if (pid % 0x20 === 0 && pid <= 0xC0) return (this.tcmFirst && pid === 0 ? "4100" + toHex([0, 0x18, 0, 0]) + "\r" : "") + "41" + hex2(pid) + toHex(this.bitmask(pid));
       if (pid === 1) {
         const n = c.stored.length;
         const C = 0xE5, D = this.cleared ? 0xE5 : 0x04;
         return "4101" + toHex([(n ? 0x80 : 0) | n, 0x07, C, D]);
       }
-      const p = BY_PID[pid];
-      if (!p || !this.sup.has(pid)) return "NO DATA";
-      return "41" + hex2(pid) + toHex(p.enc(this.vals()[p.key]));
+      const p = BY_PID[pid] || PARAMS.find(q => q.alt === pid);
+      if (!p || !this.sup.has(pid) || this.silent) return "NO DATA";
+      return "41" + hex2(pid) + toHex((pid === p.o.pid ? p.o.enc : p.altEnc || p.o.enc)(this.vals()[p.key]));
     }
     return "?";
   }
 };
 function demoTransport() {
-  demo.t0 = performance.now(); demo.cleared = false; demo.engineOff = false;
+  demo.t0 = performance.now(); demo.cleared = false; demo.engineOff = false; demo.silent = false;
   const t = { name: "Demo van", onData: null, onClose: null };
   t.write = s => { setTimeout(() => t.onData && t.onData(demo.emulate(s.trim()) + "\r\r>"), 18 + Math.random() * 20); };
   t.close = () => {};
@@ -1055,10 +1065,14 @@ function friendlyError(e, kind) {
 }
 function onConnected() {
   $("#connPill").className = "pill " + (state.mode === "demo" ? "demo" : "on");
-  $("#connText").textContent = state.mode === "demo" ? "Demo van" : "Connected · " + state.conn.name;
+  renderConnLabel();
   $("#discBtn").hidden = false;
   $("#connectBox").hidden = true; $("#liveBox").hidden = false;
   buildTiles(); renderVehicle(); renderMonitors(); renderSync();
+}
+function renderConnLabel() {
+  if (!state.conn) return;
+  $("#connText").textContent = state.mode === "demo" ? "Demo van" + (state.silent ? " · no answer" : "") : "Connected · " + (state.silent ? "no answer from the engine" : state.conn.name);
 }
 async function disconnect(msg, quiet) {
   state.polling = false;
@@ -1068,6 +1082,7 @@ async function disconnect(msg, quiet) {
   if (elm && state.mode !== "demo") { try { await Promise.race([elm.send("ATLP", 800), sleep(900)]); } catch {} }
   state.conn = null; state.elm = null; state.drive = null; clearOpen = false; clearMsg = ''; renderClearConfirm();
   if (t) { t.onClose = null; try { await t.close(); } catch {} }
+  state.silent = false; for (const k in VT) delete VT[k];
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
   connectMsg = msg || ""; if (!quiet) renderConnect(); renderVehicle();
@@ -1079,12 +1094,15 @@ async function readSupported() {
   for (const base of [0x00, 0x20, 0x40, 0x60, 0x80, 0xA0]) {
     if (base && !state.supported.has(base)) break;
     let msgs; try { msgs = parseMsgs(await state.elm.send("01" + hex2(base), 4000)); } catch { break; }
-    const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === base);
-    if (!m) break;
-    const d = m.bytes.slice(2, 6);
-    for (let i = 0; i < 32; i++) if (d[i >> 3] & (0x80 >> (i & 7))) state.supported.add(base + i + 1);
+    // The engine and transmission computers can both answer; combine what they report.
+    const ms = msgs.filter(m => m.bytes[0] === 0x41 && m.bytes[1] === base);
+    if (!ms.length) break;
+    for (const m of ms) { const d = m.bytes.slice(2, 6); for (let i = 0; i < 32; i++) if (d[i >> 3] & (0x80 >> (i & 7))) state.supported.add(base + i + 1); }
   }
-  for (const p of PARAMS) if (p.alt && !state.supported.has(p.pid) && state.supported.has(p.alt)) p.pid = p.alt;
+  for (const p of PARAMS) if (p.o.pid != null) {
+    Object.assign(p, p.o);
+    if (p.alt && !state.supported.has(p.pid) && state.supported.has(p.alt)) Object.assign(p, { pid: p.alt, n: p.altN ?? p.n, f: p.altF || p.f, enc: p.altEnc || p.enc });
+  }
 }
 async function readVin() {
   const msgs = parseMsgs(await state.elm.send("0902", 5000));
@@ -1134,7 +1152,7 @@ async function readFreezeFrame() {
   let m; try { m = await ask(0x02); } catch { return; }
   if (!m || m.bytes.length < 5 || (!m.bytes[3] && !m.bytes[4])) return; // 0000 means no freeze frame stored
   const code = dtcStr(m.bytes[3], m.bytes[4]), sup = new Set();
-  for (const base of [0x00, 0x20, 0x40]) {
+  for (const base of [0x00, 0x20, 0x40, 0x60]) {
     if (base && !sup.has(base)) break;
     let r; try { r = await ask(base); } catch { break; }
     if (!r || r.bytes.length < 7) break;
@@ -1142,9 +1160,10 @@ async function readFreezeFrame() {
   }
   const vals = {};
   for (const k of FF_KEYS) {
-    const p = P[k];
+    let p = P[k];
+    if (sup.size && !sup.has(p.pid) && sup.has(p.o.pid)) p = p.o;   // stored on the standard PID even if live data uses a newer one
     if (sup.size && !sup.has(p.pid)) continue;
-    try { const r = await ask(p.pid); if (r && r.bytes.length >= 3 + p.n) vals[k] = p.f(r.bytes.slice(3)); } catch {}
+    try { const r = await ask(p.pid); const v = r && r.bytes.length >= 3 + p.n ? p.f(r.bytes.slice(3)) : NaN; if (Number.isFinite(v)) vals[k] = v; } catch {}
   }
   state.freeze = { code, vals, at: new Date() };
 }
@@ -1205,7 +1224,7 @@ async function clearCodes() {
 
 /* ---------- polling ---------- */
 function pushVal(key, v) {
-  V[key] = v;
+  V[key] = v; VT[key] = Date.now();
   (H[key] = H[key] || []).push(v);
   const l = tileLevel(key);
   (HL[key] = HL[key] || []).push(l === "crit" ? 2 : l === "warn" ? 1 : 0);
@@ -1214,7 +1233,8 @@ function pushVal(key, v) {
 async function readParam(p) {
   const msgs = parseMsgs(await state.elm.send("01" + hex2(p.pid), 2500));
   const m = msgs.find(m => m.bytes[0] === 0x41 && m.bytes[1] === p.pid);
-  if (m && m.bytes.length >= 2 + p.n) { pushVal(p.key, p.f(m.bytes.slice(2))); if (p.key === "odo") syncOdometer(); }
+  const v = m && m.bytes.length >= 2 + p.n ? p.f(m.bytes.slice(2)) : NaN;
+  if (Number.isFinite(v)) { pushVal(p.key, v); if (p.key === "odo") syncOdometer(); }
 }
 async function readBatt() {
   const r = await state.elm.send("ATRV", 2000);
@@ -1364,7 +1384,15 @@ function setSpeak(m) {
   renderSpeak();
 }
 
+// A reading with no fresh answer is cleared, so the screen and log never show an old value as live.
+function dropStale() {
+  const now = Date.now(), lim = state.staleMs || 15000;
+  for (const k in VT) if (k !== "odo" && V[k] != null && now - VT[k] > lim) V[k] = null;
+  const silent = !!state.elm && VT.rpm != null && V.rpm == null;
+  if (silent !== !!state.silent) { state.silent = silent; renderConnLabel(); }
+}
 function afterSample() {
+  dropStale();
   try { trackDrive(); } catch {}
   const raw = evalRules(), ids = new Set(raw.map(f => f.id));
   for (const id in state.counters) if (!ids.has(id)) state.counters[id] = 0;
@@ -1379,7 +1407,7 @@ function afterSample() {
   }
   state.findings = active;
   speakAlerts(active);
-  if (state.recording) {
+  if (state.recording && LOG_KEYS.some(k => V[k] != null)) {
     state.rows.push([new Date().toISOString(), ...LOG_KEYS.map(k => V[k] == null ? "" : +conv(P[k], V[k]).toFixed(2))]);
     if (state.rows.length > 20000) state.rows.shift();
   }
@@ -2071,7 +2099,7 @@ async function runFinder(q) {
 }
 async function saveFinderFile() {
   if (!finder) return;
-  const body = JSON.stringify({ app: "MyVan Assistant " + APP_VERSION, made: new Date(finder.at).toISOString(), dashMiles: finder.target, adapter: state.elmVer, protocol: state.protocol,
+  const body = JSON.stringify({ app: "MyVan Assistant " + APP_VERSION, made: new Date(finder.at).toISOString(), dashMiles: finder.target, adapter: state.elmVer, protocol: state.protocol, supportedPids: [...state.supported].sort((a, b) => a - b).map(hex2).join(" "),
     modules: finder.mods.map(m => m.name), matches: finder.matches.map(({ t, ...h }) => h), log: finder.log }, null, 1);
   const name = "myvan-data-finder-" + new Date(finder.at).toISOString().slice(0, 10) + ".json", file = new File([body], name, { type: "application/json" });
   try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "MyVan data finder results" }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
