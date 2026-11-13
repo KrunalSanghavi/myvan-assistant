@@ -41,6 +41,7 @@ test("self-test results are saved, survive a reload and appear in the report", a
   expect(saved.rows.length).toBeGreaterThan(5);
   expect(saved.rows.every(r => r.length === 9)).toBe(true);
 
+  page.once("dialog", d => d.accept());   // connected to a real adapter: the app asks before reloading (#58)
   await page.reload();
   await tab(page, "Health");
   await expect(page.locator("#healthOut .hero p")).toContainText("Self-tests read");
