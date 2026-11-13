@@ -438,6 +438,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
         <button class="nrow" type="button" data-go="checks"><span>Alerts this session</span><span class="v" id="checkBadge"></span></button>
         <button class="nrow" type="button" data-go="checks"><span>Spoken alerts</span><span class="v muted" id="speakRow"></span></button>
         <button class="nrow" type="button" data-go="log"><span>Session log and adapter traffic</span><span class="v muted" id="moreLogCount"></span></button>
+        <button class="nrow" type="button" id="finderRow"><span>Honda data finder (odometer)</span><span class="v muted">Read-only</span></button>
       </div></div>
     <div class="panel stack" style="gap:12px">
       <div class="row between"><h3>Readiness monitors</h3><button class="btn small" id="monBtn">Refresh</button></div>
@@ -840,13 +841,25 @@ const demo = {
     const since = this.cleared ? (performance.now() - this.clearedAt) / 1000 : 1e9;
     return { stored: this.cleared ? [] : [[0x04, 0x56]], pending: since > 40 ? [[0x01, 0x74]] : [], permanent: [[0x04, 0x56]] };
   },
+  // Module-level (non-OBD) requests while the data finder has changed the header.
+  module(cmd) {
+    const panel = this.p29 && this.hdr === "DA60F1", ecm = !this.p29 && this.hdr === "7E0";
+    if (!panel && !ecm) return "NO DATA";
+    if (cmd === "22F190") return panel ? "62F190" + toHex([...this.vin].map(c => c.charCodeAt(0))) : "7F2231";
+    if (panel && cmd === "222202") { const km = Math.round(this.vals().odo); return "622202" + toHex([(km >> 16) & 255, (km >> 8) & 255, km & 255]); }
+    if (panel && cmd === "222203") return "622203" + toHex([0, 0x2A]);   // something else that isn't the odometer
+    return /^22/.test(cmd) ? "7F2231" : /^21/.test(cmd) ? "7F2112" : "7F" + cmd.slice(0, 2) + "11";
+  },
   emulate(cmd) {
     cmd = cmd.toUpperCase().replace(/\s/g, "");
     if (cmd === "ATZ" || cmd === "ATI") return "ELM327 v1.5";
     if (cmd === "ATRV") return this.vals().batt.toFixed(1) + "V";
     if (cmd === "ATDPN") return "A6";
     if (cmd === "ATDP") return "AUTO, ISO 15765-4 (CAN 11/500)";
+    if (/^ATSP/.test(cmd)) { this.p29 = cmd === "ATSP7"; return "OK"; }
+    if (/^ATSH/.test(cmd)) { this.hdr = cmd.slice(4); return "OK"; }
     if (cmd.startsWith("AT")) return "OK";
+    if (this.p29 || (this.hdr && this.hdr !== "7DF")) return this.module(cmd);
     if (cmd === "0902") {
       const b = [0x49, 0x02, 0x01, ...[...this.vin].map(c => c.charCodeAt(0))];
       return ["014", "0:" + toHex(b.slice(0, 6)), "1:" + toHex(b.slice(6, 13)), "2:" + toHex(b.slice(13, 20))].join("\r");
@@ -981,7 +994,7 @@ async function connect(kind) {
     renderConnect("Finding the van's protocol… (ignition must be on)");
     await state.elm.send("0100", 12000).then(parseMsgs);
     const dpn = (await state.elm.send("ATDPN")).replace(/[^0-9A-C]/gi, "").slice(-1).toUpperCase();
-    state.isCan = ["6", "7", "8", "9", "A", "B", "C"].includes(dpn);
+    state.isCan = ["6", "7", "8", "9", "A", "B", "C"].includes(dpn); state.dpn = dpn;
     state.protocol = (await state.elm.send("ATDP")).replace(/[\r\n>]/g, " ").trim();
     renderConnect("Checking which readings the van supports…");
     await readSupported();
@@ -990,6 +1003,7 @@ async function connect(kind) {
     connectBusy = false;
     onConnected();
     readCodes().then(() => readMode06());
+    state.odoReadAt = 0;
     pollLoop();
   } catch (e) {
     connectBusy = false;
@@ -1183,12 +1197,15 @@ async function pollLoop() {
   let cycle = 0, si = 0, fails = 0;
   try { await readBatt(); } catch {}
   while (state.polling && state.elm) {
+    if (state.hold) { await sleep(150); continue; }   // the data finder or a module read is using the adapter
     try {
-      for (const p of fast) { if (!state.polling) return; await readParam(p); }
+      for (const p of fast) { if (!state.polling) return; if (state.hold) break; await readParam(p); }
+      if (state.hold) continue;
       for (let k = 0; k < 3 && slow.length; k++) await readParam(slow[si++ % slow.length]);
       if (cycle % 6 === 0 || !(V.rpm > 400)) await readBatt();
       if (state.m06 && Date.now() - state.m06.at > 600000) await readMode06();
       if (cycle % 120 === 119) await readMonitors();
+      if (state.mode !== "demo" && !state.supported.has(0xA6) && store.get("odoSource", null) && Date.now() - (state.odoReadAt || 0) > 600000) { state.odoReadAt = Date.now(); await readOdoSource(); }
       fails = 0;
     } catch (e) {
       if (++fails > 6) { disconnect("Lost contact with the adapter. Check it's still plugged in, then reconnect."); return; }
@@ -1857,6 +1874,177 @@ async function readMode06() {
   renderHealth(); renderStrip();
 }
 
+/* ---------- Honda data finder (read-only, #52) ---------- */
+// Generic OBD-II doesn't include this van's odometer. Its instrument panel and other modules do have it, behind
+// Honda's own diagnostic requests. The finder asks each module with READ-ONLY requests and looks for the number
+// the owner reads off the dash. A source is used only when it matches the dash; nothing is estimated.
+// Allowed: UDS 22 (read data by identifier), KWP 21 (read local identifier), 1A (read ECU identification).
+const FIND_SAFE = /^(22[0-9A-F]{4}|21[0-9A-F]{2}|1A[0-9A-F]{2})$/;
+const atCmd = c => state.elm.send(c, 2000);
+let diagProto = null;
+async function holdPolling() { state.hold = true; await sleep(state.mode === "demo" ? 300 : 450); }
+const tName = t => t.bits === 29 ? "18DA" + hex2(t.addr) + "F1" : t.tx.toString(16).toUpperCase();
+async function diagTarget(t) {
+  if (t.bits === 29) {
+    if (diagProto !== 29) { await atCmd("ATSP7"); await atCmd("ATCP18"); diagProto = 29; }
+    await atCmd("ATSHDA" + hex2(t.addr) + "F1"); await atCmd("ATCRA18DAF1" + hex2(t.addr));
+  } else {
+    if (diagProto !== 11) { await atCmd("ATSP6"); diagProto = 11; }
+    await atCmd("ATSH" + t.tx.toString(16).toUpperCase()); await atCmd("ATCRA" + (t.tx + 8).toString(16).toUpperCase());
+  }
+}
+async function diagRestore() {
+  diagProto = null;
+  for (const c of ["ATCRA", "ATST32", "ATSP" + (state.dpn || "0"), "ATSH7DF"]) { try { await atCmd(c); } catch {} }
+}
+async function diagRead(req, ms = 600) {
+  if (!FIND_SAFE.test(req)) throw new Error("Blocked: the finder only sends read requests.");
+  let raw; try { raw = await state.elm.send(req, ms); } catch { return null; }
+  let msgs; try { msgs = parseMsgs(raw); } catch { return null; }
+  const m = msgs.find(m => m.bytes.length);
+  return m ? m.bytes : null;
+}
+// "00-FF, 7E0" → numbers. "22:F180-F1FF, 21:00-FF" → [service, id width, first, last].
+function parseHexList(t) {
+  const out = [];
+  for (const part of String(t).toUpperCase().split(/[,\s]+/).filter(Boolean)) {
+    const m = /^([0-9A-F]+)(?:-([0-9A-F]+))?$/.exec(part); if (!m) continue;
+    const a = parseInt(m[1], 16), b = m[2] ? parseInt(m[2], 16) : a;
+    for (let x = a; x <= b && out.length < 4096; x++) out.push(x);
+  }
+  return out;
+}
+function parseIdRanges(t) {
+  return String(t).toUpperCase().split(/[,\s]+/).map(x => /^(22|21|1A):([0-9A-F]+)-?([0-9A-F]*)$/.exec(x)).filter(Boolean)
+    .map(m => [m[1], m[1] === "22" ? 4 : 2, parseInt(m[2], 16), parseInt(m[3] || m[2], 16)]);
+}
+// Every way a number could be packed in the answer, compared with the dash reading (miles, within 3).
+function odoMatches(bytes, start, targetMi) {
+  const d = bytes.slice(start), out = [];
+  for (let o = 0; o < d.length; o++) for (const len of [2, 3, 4]) {
+    if (o + len > d.length) continue;
+    const b = d.slice(o, o + len), cands = [["be", b.reduce((a, x) => a * 256 + x, 0)], ["le", [...b].reverse().reduce((a, x) => a * 256 + x, 0)]];
+    if (b.every(x => (x >> 4) < 10 && (x & 15) < 10)) cands.push(["bcd", +b.map(hex2).join("")]);
+    for (const [order, raw] of cands) for (const unit of ["mi", "km"]) for (const div of [1, 10, 100]) {
+      const mi = raw / div / (unit === "km" ? KM_PER_MI : 1);
+      if (raw > 0 && Math.abs(mi - targetMi) <= 3) out.push({ off: o, len, order, unit, div, mi });
+    }
+  }
+  return out;
+}
+function decodeOdo(bytes, src) {
+  const b = bytes.slice(src.start + src.off, src.start + src.off + src.len);
+  if (b.length !== src.len) return null;
+  const raw = src.order === "bcd" ? +b.map(hex2).join("") : (src.order === "le" ? [...b].reverse() : b).reduce((a, x) => a * 256 + x, 0);
+  return isFinite(raw) ? raw / src.div / (src.unit === "km" ? KM_PER_MI : 1) : null;
+}
+const srcText = h => `${h.mod}, request ${h.req.slice(0, 2)} ${h.req.slice(2)}, bytes ${h.off + 1}–${h.off + h.len}, ${h.order === "bcd" ? "decimal digits" : h.order === "be" ? "high byte first" : "low byte first"}, ${h.unit}${h.div > 1 ? " ÷ " + h.div : ""}`;
+// Read the saved source once and use it only if it makes sense next to the last known odometer.
+async function readOdoSource(src = store.get("odoSource", null)) {
+  if (!src || !state.elm) return null;
+  let mi = null;
+  await holdPolling();
+  try {
+    diagProto = null; await diagTarget(src.t);
+    const r = await diagRead(src.req, 1500);
+    if (r && r[0] === parseInt(src.req.slice(0, 2), 16) + 0x40) mi = decodeOdo(r, src);
+  } catch {} finally { await diagRestore(); state.hold = false; }
+  const last = num0(maintData().odo);
+  if (mi == null || !(mi > 0) || (last != null && state.mode !== "demo" && (mi < last - 5 || mi > last + 20000))) return null;
+  pushVal("odo", mi * KM_PER_MI); syncOdometer(); renderVehicle();
+  return Math.round(mi);
+}
+let finder = null;
+function finderHtml() {
+  const odo = num0(maintData().odo), src = store.get("odoSource", null);
+  return `<header><div class="t"><span class="label">Read-only</span><h2>Honda data finder</h2></div><button class="close" aria-label="Close">×</button></header>
+    <div class="block prose"><p>Your van doesn't send its odometer the standard OBD-II way. Its instrument panel and other modules have it, behind Honda's own diagnostic requests. This finder asks each module, using <b>read requests only</b>, and looks for the number on your dash. It can't change, reset or clear anything.</p>
+      <p>Turn the ignition on (the engine can run) and keep the app open near the van. It takes about 5 to 15 minutes.</p></div>
+    ${src ? `<div class="notice" id="fdSaved">Using: ${esc(srcText(src))}. <button class="link" type="button" id="fdForget">Stop using it</button></div>` : ""}
+    <label class="flabel">Odometer on the dash right now (miles)<input class="inp" id="fdOdo" inputmode="numeric" value="${esc(odo != null ? String(odo) : "")}" placeholder="e.g. 109412"></label>
+    <details class="help"><summary>Advanced: what to scan</summary><div class="prose stack" style="gap:8px">
+      <label class="flabel">Module addresses, 29-bit (hex)<input class="inp" id="fd29" value="00-FF"></label>
+      <label class="flabel">Module addresses, 11-bit (hex)<input class="inp" id="fd11" value="700-7F7"></label>
+      <label class="flabel">Data to read on each module (service:first-last, hex)<input class="inp" id="fdIds" value="22:F180-F1FF, 22:0100-02FF, 22:2200-22FF, 21:00-FF"></label></div></details>
+    <div class="row" style="gap:8px"><button class="btn primary" type="button" id="fdStart"${state.elm ? "" : " disabled"}>Start</button><button class="btn" type="button" id="fdStop" hidden>Stop</button></div>
+    ${state.elm ? "" : `<p class="muted" style="font-size:.86rem">Connect to the van first.</p>`}
+    <div id="fdProg" role="status" aria-live="polite" class="muted" style="font-size:.9rem"></div>
+    <div id="fdOut" class="stack" style="gap:10px"></div>`;
+}
+function openFinder() { openSheet(finderHtml()); wireFinder(); }
+function wireFinder() {
+  const root = topSheet(), q = sel => root.querySelector(sel);
+  q("#fdStart").onclick = () => runFinder(q);
+  q("#fdStop").onclick = () => { if (finder) finder.stop = true; };
+  const f = q("#fdForget"); if (f) f.onclick = () => { store.set("odoSource", null); q("#fdSaved").remove(); };
+}
+async function runFinder(q) {
+  const target = num0((q("#fdOdo").value || "").replace(/[^\d]/g, ""));
+  const prog = t => { const el = q("#fdProg"); if (el) el.textContent = t; };
+  if (!state.elm) { prog("Connect to the van first."); return; }
+  if (target == null || target < 10) { prog("Type the odometer from the dash first, so the finder knows what to look for."); return; }
+  if (state.mode !== "demo" && !state.isCan) { prog("This needs a van that talks CAN (2008 and newer)."); return; }
+  const mods29 = parseHexList(q("#fd29").value).filter(a => a <= 0xFF && a !== 0xF1).map(addr => ({ bits: 29, addr }));
+  const mods11 = parseHexList(q("#fd11").value).filter(a => a >= 0x700 && a <= 0x7F7).map(tx => ({ bits: 11, tx }));
+  const ranges = parseIdRanges(q("#fdIds").value);
+  finder = { stop: false, at: Date.now(), target, mods: [], log: [], matches: [] };
+  q("#fdStart").hidden = true; q("#fdStop").hidden = false; q("#fdOut").innerHTML = "";
+  await holdPolling();
+  try {
+    await atCmd("ATST19");
+    const cands = [...mods29, ...mods11];
+    for (let i = 0; i < cands.length && !finder.stop; i++) {
+      prog(`Looking for modules: ${i + 1} of ${cands.length}. Found ${finder.mods.length}.`);
+      await diagTarget(cands[i]);
+      const r = await diagRead("22F190", 300);
+      if (r) { finder.mods.push({ t: cands[i], name: tName(cands[i]) }); finder.log.push({ mod: tName(cands[i]), req: "22F190", res: r[0] === 0x62 ? "62F190 (VIN, not saved)" : toHex(r) }); }
+    }
+    const total = finder.mods.length * ranges.reduce((a, r) => a + r[3] - r[2] + 1, 0);
+    let n = 0;
+    for (const m of finder.mods) {
+      if (finder.stop) break;
+      await diagTarget(m.t);
+      for (const [svc, w, a, b] of ranges) for (let id = a; id <= b && !finder.stop; id++) {
+        const req = svc + id.toString(16).toUpperCase().padStart(w, "0");
+        if (++n % 8 === 0 || n === total) prog(`Reading module ${m.name}: ${n} of ${total}. Matches so far: ${finder.matches.length}.`);
+        if (req === "22F190") continue;
+        const r = await diagRead(req);
+        if (!r || r[0] !== parseInt(svc, 16) + 0x40) continue;
+        finder.log.push({ mod: m.name, req, res: toHex(r) });
+        const start = svc === "22" ? 3 : 2;
+        for (const h of odoMatches(r, start, target)) finder.matches.push({ t: m.t, mod: m.name, req, start, ...h });
+      }
+    }
+  } catch (e) { prog("Stopped: " + (e && e.message || e)); }
+  finally { await diagRestore(); state.hold = false; }
+  if (!q("#fdOut")) return;   // the sheet was closed
+  q("#fdStart").hidden = false; q("#fdStop").hidden = true;
+  const ms = finder.matches.filter((h, i, a) => a.findIndex(x => x.mod === h.mod && x.req === h.req && x.off === h.off && x.len === h.len) === i).slice(0, 12);
+  prog(`${finder.stop ? "Stopped" : "Finished"}. ${finder.mods.length} module${finder.mods.length === 1 ? "" : "s"} answered, ${finder.log.length} readings saved, ${ms.length} possible odometer source${ms.length === 1 ? "" : "s"}.`);
+  q("#fdOut").innerHTML = `${finder.mods.length ? `<div class="block"><b>Modules that answered</b><p class="muted" style="font-size:.86rem;margin:4px 0 0">${esc(finder.mods.map(m => m.name).join(", "))}</p></div>` : `<div class="notice warn">No module answered. Check the ignition is on, then try again.</div>`}
+    ${ms.length ? `<div class="group"><span class="label">Possible odometer sources</span><div class="list">${ms.map((h, i) => `<div class="item"><div class="body"><b>${esc(Math.round(h.mi).toLocaleString())} mi</b><span class="muted" style="font-size:.84rem">${esc(srcText(h))}</span></div><button class="btn small" type="button" data-fduse="${i}">Use this</button></div>`).join("")}</div>
+      <p class="muted" style="font-size:.84rem">If there's more than one, drive a mile or two and run the finder again: the right one goes up with the dash.</p></div>` : finder.mods.length ? `<div class="notice">No reading matched ${esc(target.toLocaleString())} miles. Save the results file and send it, so the right request can be worked out, or try wider ranges under Advanced.</div>` : ""}
+    <button class="btn" type="button" id="fdSave">Save results file</button>
+    <p class="muted" style="font-size:.82rem">The file has the raw answers from your van's modules, with the VIN left out. Nothing is sent anywhere unless you share it.</p>`;
+  q("#fdOut").querySelectorAll("[data-fduse]").forEach(b => b.onclick = async () => {
+    const h = ms[+b.dataset.fduse], src = { t: h.t, mod: h.mod, req: h.req, start: h.start, off: h.off, len: h.len, order: h.order, unit: h.unit, div: h.div };
+    store.set("odoSource", src); b.disabled = true; b.textContent = "Checking…";
+    const mi = await readOdoSource(src);
+    b.textContent = mi != null ? "In use" : "Use this";
+    prog(mi != null ? `Read ${mi.toLocaleString()} mi from the van. The app will read it this way from now on.` : "Couldn't read it back just now. Try again with the ignition on.");
+  });
+  q("#fdSave").onclick = () => saveFinderFile();
+}
+async function saveFinderFile() {
+  if (!finder) return;
+  const body = JSON.stringify({ app: "MyVan Assistant " + APP_VERSION, made: new Date(finder.at).toISOString(), dashMiles: finder.target, adapter: state.elmVer, protocol: state.protocol,
+    modules: finder.mods.map(m => m.name), matches: finder.matches.map(({ t, ...h }) => h), log: finder.log }, null, 1);
+  const name = "myvan-data-finder-" + new Date(finder.at).toISOString().slice(0, 10) + ".json", file = new File([body], name, { type: "application/json" });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "MyVan data finder results" }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
 /* ---------- trip and fuel economy (estimated from airflow) ---------- */
 // Fuel burned = air / air-fuel ratio. Gasoline at the ideal mixture is 14.7 g of air per g of fuel,
 // and a liter of gasoline weighs about 745 g. Internally: km, liters, seconds.
@@ -2461,7 +2649,9 @@ const DEMO_VIN_KEY = "demo";
 const recallKey = c => state.mode === "demo" ? DEMO_VIN_KEY : c.vin;
 const recallClosed = c => (c && recallClosedAll()[recallKey(c)]) || {};
 const isClosed = (c, r) => !!recallClosed(c)[r.id];
-const openList = c => c ? c.items.filter(r => !isClosed(c, r)) : [];
+const byIssued = items => [...items].sort((a, b) => recallTime(b) - recallTime(a));   // newest first, by NHTSA's date
+const openList = c => c ? byIssued(c.items.filter(r => !isClosed(c, r))) : [];
+const closedList = c => c ? byIssued(c.items.filter(r => isClosed(c, r))) : [];
 function setRecallClosed(c, ids, closed) {
   const k = recallKey(c), all = recallClosedAll(), m = { ...(all[k] || {}) }, d = new Date(), today = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
   for (const id of ids) { if (closed) m[id] = m[id] || today; else delete m[id]; }
@@ -2489,7 +2679,7 @@ function recallItemHtml(c, r) {
       <button class="btn small" type="button" data-rmark="${closed ? "open" : "closed"}">${closed ? "Reopen: not fixed on my van" : "Mark closed: fixed or doesn't apply"}</button></div></details>`;
 }
 function recallSheetHtml(c) {
-  const open = openList(c), closed = c.items.filter(r => isClosed(c, r));
+  const open = openList(c), closed = closedList(c);
   return `<header><div class="t"><span class="label">${esc(vehicleName(c))}</span><h2>${c.items.length} recall${c.items.length === 1 ? "" : "s"}</h2></div><button class="close" aria-label="Close">×</button></header>
     <p class="muted" style="font-size:.88rem">${c.demo ? "Sample data for the demo van" : "From NHTSA"}, checked ${esc(new Date(c.at).toLocaleDateString([], { dateStyle: "medium" }))}. NHTSA lists every recall for the model and year. <a href="${esc(nhtsaVinUrl(c.vin))}" target="_blank" rel="noopener">Check which are open for your VIN</a>, then mark the rest closed.</p>
     <div class="row" style="gap:8px">${open.length ? `<button class="btn small" type="button" id="recallAllClosed">Mark all closed</button>` : ""}${closed.length ? `<button class="btn small" type="button" id="recallAllOpen">Mark all open</button>` : ""}</div>
@@ -2556,7 +2746,7 @@ function reportModel(o) {
       note: `${ts.length} tests read ${state.m06.at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${nf ? nf + " failed" : "none failed"}${nr ? ", " + nr + " not run yet" : ""}. The van decides pass or fail; "near limit" means a passing reading close to Honda's limit.` });
   }
   const rc = recallCache();
-  if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: [...openList(rc), ...rc.items.filter(r => isClosed(rc, r))].map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), tag: isClosed(rc, r) ? { t: "Closed", c: "ok" } : { t: "Open", c: "warn" }, sub: recallDate(r) + (!isClosed(rc, r) && (r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
+  if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: [...openList(rc), ...closedList(rc)].map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), tag: isClosed(rc, r) ? { t: "Closed", c: "ok" } : { t: "Open", c: "warn" }, sub: recallDate(r) + (!isClosed(rc, r) && (r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
     note: `All NHTSA recalls for the ${vehicleName(rc)}, checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}: ${openList(rc).length} open, ${rc.items.length - openList(rc).length} marked closed by the owner. Whether each one has been repaired on this van can be checked by VIN at nhtsa.gov/recalls.` });
   const parts = MAINT.map(it => ({ it, st: maintStatus(it.id), d: md.items[it.id] || {} })).filter(x => x.st || x.d.lastDate || x.d.lastMi);
   if (parts.length) S.push({ h: "Parts age", rows: parts.map(({ it, st, d }) => ({ k: it.name, v: [d.lastDate ? "Last done " + new Date(d.lastDate + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "", num0(d.lastMi) != null ? "at " + (+d.lastMi).toLocaleString() + " mi" : ""].filter(Boolean).join(" ") || "—", tag: st ? { t: st.grade === "plan" ? "Due" : st.grade === "watch" ? "Due soon" : "OK", c: GR[st.grade].c } : null })) });
@@ -3351,6 +3541,7 @@ $("#repShare").onclick = async () => {
 $("#histMetric").onchange = e => { histMetric = e.target.value; store.set("histMetric", histMetric); renderHistory(); };
 document.querySelectorAll("#view-history [data-range]").forEach(b => b.onclick = () => { histRange = b.dataset.range; store.set("histRange", histRange); renderHistory(); });
 $("#discBtn").onclick = () => disconnect("");
+$("#finderRow").onclick = openFinder;
 $("#readBtn").onclick = readCodes;
 $("#clearBtn").onclick = () => {
   if (!state.elm) { renderCodes("Connect to the van first."); return; }
