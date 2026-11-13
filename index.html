@@ -1556,7 +1556,7 @@ function renderVehicle() {
     ["Protocol", state.protocol ? esc(state.protocol.replace(/^AUTO,\s*/i, "")) : "—"],
     ["Adapter", state.elmVer ? esc(state.elmVer) : "—"],
     ["Battery", V.batt != null ? fmt("batt") : "—"],
-    ["Odometer", V.odo != null ? fmt("odo") + (state.mode === "demo" ? " (simulated)" : "") : state.elm && !state.supported.has(0xA6) ? "Not reported by this van" : "—"],
+    ["Odometer", V.odo != null ? fmt("odo") + (state.mode === "demo" ? " (simulated)" : "") : num0(maintData().odo) != null ? (+maintData().odo).toLocaleString() + " mi (entered by you)" : state.elm && !state.supported.has(0xA6) ? "Not reported by this van. Type it in under Maintenance" : "—"],
     ["Readings supported", state.elm ? PARAMS.filter(p => p.pid != null && state.supported.has(p.pid)).length + " of " + PARAMS.filter(p => p.pid != null).length : "—"]
   ];
   $("#vehKv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -2078,6 +2078,46 @@ function syncPartFromLog(part) {
   } else if (it.fromLog) { delete it.lastDate; delete it.lastMi; delete it.fromLog; }
   store.set("maint", m); maintCache = m;
 }
+// Honda Maintenance Minder (2018 Odyssey). The code lives in the instrument cluster, which generic OBD-II can't read,
+// so the owner types what the dash shows. Main code A or B, then any of sub-codes 1-7.
+const MINDER = {
+  A: { t: "Replace engine oil", parts: ["oil"] },
+  B: { t: "Replace engine oil and filter, and inspect the brakes, parking brake, steering, suspension, driveshaft boots, brake lines, fluid levels, exhaust and fuel lines", parts: ["oil"] },
+  1: { t: "Rotate the tires", parts: [], log: "Tire rotation" },
+  2: { t: "Replace the engine air filter and the cabin (dust and pollen) filter, and inspect the drive belt", parts: ["airfilter"] },
+  3: { t: "Replace the transmission fluid", parts: ["atf"] },
+  4: { t: "Replace the spark plugs and timing belt, inspect the water pump, and check valve clearance", parts: ["plugs", "belt"] },
+  5: { t: "Replace the engine coolant", parts: ["coolant"] },
+  6: { t: "Replace the rear differential fluid (all-wheel-drive models only; the Odyssey is front-wheel drive)", parts: [] },
+  7: { t: "Replace the brake fluid", parts: ["brakefluid"] }
+};
+function parseMinder(code) {
+  const c = String(code || "").toUpperCase().replace(/\s+/g, "");
+  const m = /^([AB])?([1-7]*)$/.exec(c);
+  if (!m || (!m[1] && !m[2])) return null;
+  const subs = [...new Set(m[2].split(""))].sort();
+  return { code: (m[1] || "") + subs.join(""), items: [m[1], ...subs].filter(Boolean).map(k => ({ k, ...MINDER[k] })) };
+}
+function minderHtml(code) {
+  if (!String(code || "").trim()) return `<p class="muted" style="font-size:.85rem;margin:0">When the dash shows a Maintenance Minder code (a letter and numbers, like B12), type it here to see what it means.</p>`;
+  const r = parseMinder(code);
+  if (!r) return `<p class="muted" style="font-size:.85rem;margin:0">That doesn't look like a Minder code. They start with A or B, followed by numbers 1 to 7, like B12.</p>`;
+  return `<div class="block stack" id="minderJobs" style="gap:6px"><b>${esc(r.code)} means:</b><ul style="margin:0;padding-left:20px;font-size:.92rem">${r.items.map(x => `<li><b>${esc(x.k)}</b>: ${esc(x.t)}.</li>`).join("")}</ul>
+    <button class="btn small" type="button" id="minderDone">Mark these done today${num0(maintData().odo) != null ? " at " + (+maintData().odo).toLocaleString() + " mi" : ""}</button>
+    <p class="muted" style="font-size:.82rem;margin:0">After the work is done, reset the Minder on the dash as the owner's manual describes.</p></div>`;
+}
+function minderDone() {
+  const m = maintData(), r = parseMinder(m.minder); if (!r) return;
+  const now = new Date(), date = new Date(now - now.getTimezoneOffset() * 6e4).toISOString().slice(0, 10), mi = num0(m.odo), list = services();
+  const parts = [...new Set(r.items.flatMap(x => x.parts))];
+  const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  for (const part of parts) list.push({ id: id(), part, date, mi, cost: null, note: `Maintenance Minder ${r.code}` });
+  for (const x of r.items.filter(x => x.log)) list.push({ id: id(), part: "other", date, mi, cost: null, note: `${x.log} (Maintenance Minder ${r.code})` });
+  store.set("services", list);
+  parts.forEach(syncPartFromLog);
+  const m2 = maintData(); m2.minderDone = { code: r.code, date }; m2.minder = ""; store.set("maint", m2); maintCache = m2;
+  renderMaint(); renderHealth();
+}
 function maintDue() {
   const due = [], soon = [];
   for (const it of MAINT) { const st = maintStatus(it.id); if (!st) continue; if (st.grade === "plan") due.push(it.name); else if (st.grade === "watch") soon.push(it.name); }
@@ -2134,6 +2174,9 @@ function renderMaint() {
     ${serviceListHtml()}
     <div class="row" style="justify-content:space-between;margin-top:6px"><label for="m-odo"><b>Current odometer</b></label><input id="m-odo" class="inp" inputmode="numeric" value="${esc(m.odo || "")}" placeholder="miles"></div>
     <p class="muted" id="odoSrc" style="font-size:.85rem;margin-top:-6px">${odoSrcText()}</p>
+    <div class="row" style="justify-content:space-between"><label for="m-minder"><b>Maintenance Minder code</b></label><input id="m-minder" class="inp" autocapitalize="characters" autocomplete="off" value="${esc(m.minder || "")}" placeholder="like B12" style="max-width:160px"></div>
+    <div id="minderOut">${minderHtml(m.minder)}</div>
+    ${m.minderDone ? `<p class="muted" style="font-size:.85rem;margin:0">Last Minder service logged: ${esc(m.minderDone.code)} on ${esc(new Date(m.minderDone.date + "T12:00").toLocaleDateString([], { dateStyle: "medium" }))}.</p>` : ""}
     <p class="muted" style="font-size:.85rem">The intervals filled in are common starting points. Change them to match your Maintenance Minder and owner's manual. Enter 0 miles for a part that's never been replaced.</p>
     <div class="mlist">${MAINT.map(it => { const d = m.items[it.id] || {}; return `<details class="mrow"><summary><span>${esc(it.name)}</span><span id="ms-${it.id}">${maintChip(it.id)}</span></summary><div class="mform">
       <label>Last done at (miles)<input class="inp" id="m-${it.id}-lastMi" inputmode="numeric" value="${esc(d.lastMi ?? "")}"></label>
@@ -2451,6 +2494,7 @@ function reportModel(o) {
   S.push({ h: "Vehicle", rows: [
     ...(o.vin && reportVin() ? [{ k: "VIN", v: reportVin() }] : []),
     { k: "Odometer", v: odo },
+    ...(parseMinder(md.minder) ? [{ k: "Maintenance Minder", v: parseMinder(md.minder).code + ": " + parseMinder(md.minder).items.map(x => x.t.split(",")[0]).join("; "), tag: { t: "Due", c: "warn" } }] : []),
     ...(state.mode === "demo" ? [{ k: "Source", v: "Demo van (simulated data)" }] : [])] });
   // Summary
   const evs = COMPONENTS.map(c => ({ c, e: evalComponent(c) }));
@@ -3349,7 +3393,8 @@ if ("serviceWorker" in navigator && !inFrame && location.protocol === "https:") 
 $("#maintOut").addEventListener("input", e => {
   const id = e.target.id; if (!id || !id.startsWith("m-")) return;
   const m = maintData();
-  if (id === "m-odo") { m.odo = e.target.value.replace(/[^\d]/g, ""); m.odoSrc = "manual"; m.odoAt = null; const s = $("#odoSrc"); if (s) s.innerHTML = odoSrcText(); }
+  if (id === "m-odo") { m.odo = e.target.value.replace(/[^\d]/g, ""); m.odoSrc = "manual"; m.odoAt = null; const s = $("#odoSrc"); if (s) s.innerHTML = odoSrcText(); renderVehicle(); }
+  else if (id === "m-minder") { m.minder = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8); store.set("maint", m); maintCache = m; $("#minderOut").innerHTML = minderHtml(m.minder); return; }
   else { const [, item, field] = id.split("-"); const it = m.items[item] = m.items[item] || {}; it[field] = e.target.value; if (field === "lastMi" || field === "lastDate") delete it.fromLog; }
   store.set("maint", m); maintCache = m;
   MAINT.forEach(it => { const el = document.getElementById("ms-" + it.id); if (el) el.innerHTML = maintChip(it.id); });
@@ -3358,6 +3403,7 @@ $("#maintOut").addEventListener("input", e => {
 $("#maintOut").addEventListener("click", e => {
   const t = e.target;
   if (t.closest("#logSvcBtn")) { openServiceForm(); return; }
+  if (t.closest("#minderDone")) { minderDone(); return; }
   const ed = t.closest("[data-svc-edit]"); if (ed) { openServiceForm(ed.dataset.svcEdit); return; }
   const del = t.closest("[data-svc-del]");
   if (del) {

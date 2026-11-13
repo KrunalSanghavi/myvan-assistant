@@ -38,7 +38,7 @@ test("manual odometer entry still works when the van doesn't report A6", async (
   await seedStorage(page, { maint: { odo: "40000", items: {} } });
   await connectFakeUsb(page, { without: [0xA6] });
   await tab(page, "More");
-  await expect(page.locator("#vehKv")).toContainText("Not reported by this van");
+  await expect(page.locator("#vehKv")).toContainText("40,000 mi (entered by you)");   // the van has no A6, so the typed reading shows (#51)
   await tab(page, "Health");
   await page.locator("#m-odo").fill("61234");
   await expect(page.locator("#odoSrc")).toContainText("Type it in");
