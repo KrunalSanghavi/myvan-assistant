@@ -82,6 +82,7 @@ section.view{padding-top:16px;display:flex;flex-direction:column;gap:16px}
 .notice b{font-weight:600}
 .notice.crit{background:var(--crit-bg);border:1px solid var(--crit-line)}
 details.help.recall + details.help.recall{margin-top:0}
+details.help.recall.open{border-color:var(--warn-line);background:var(--warn-bg)}
 details.help.recall summary{padding:10px 16px;min-height:62px}
 details.help.recall .prose{padding:0 16px 14px}
 
@@ -2452,6 +2453,20 @@ const recallDate = r => recallTime(r) ? new Date(recallTime(r)).toLocaleDateStri
 const titleCase = t => t.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 const vehicleName = c => `${c.year} ${titleCase(c.make)} ${c.model.toUpperCase() === c.model ? titleCase(c.model) : c.model}`;
 const nhtsaVinUrl = vin => "https://www.nhtsa.gov/recalls?vin=" + encodeURIComponent(vin);
+// The owner marks recalls that are done or don't apply. Saved per VIN; the demo van keeps marks in memory.
+// A recall not seen before starts open, so new ones stand out.
+let demoRecallClosed = {};
+const recallClosedAll = () => state.mode === "demo" ? { [DEMO_VIN_KEY]: demoRecallClosed } : store.get("recallClosed", {});
+const DEMO_VIN_KEY = "demo";
+const recallKey = c => state.mode === "demo" ? DEMO_VIN_KEY : c.vin;
+const recallClosed = c => (c && recallClosedAll()[recallKey(c)]) || {};
+const isClosed = (c, r) => !!recallClosed(c)[r.id];
+const openList = c => c ? c.items.filter(r => !isClosed(c, r)) : [];
+function setRecallClosed(c, ids, closed) {
+  const k = recallKey(c), all = recallClosedAll(), m = { ...(all[k] || {}) }, d = new Date(), today = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  for (const id of ids) { if (closed) m[id] = m[id] || today; else delete m[id]; }
+  if (state.mode === "demo") demoRecallClosed = m; else { all[k] = m; store.set("recallClosed", all); }
+}
 const recallChips = r => (r.parkIt ? `<span class="chip crit">Don't drive: park it</span>` : "") + (r.parkOutSide ? `<span class="chip crit">Park outside</span>` : "");
 function renderRecalls() {
   const inp = $("#recallVin"); if (!inp) return;
@@ -2459,19 +2474,39 @@ function renderRecalls() {
   $("#recallBtn").disabled = recallBusy; $("#recallBtn").textContent = recallBusy ? "Checking…" : "Check recalls";
   const c = recallCache(), msg = recallMsg ? `<div class="notice ${recallMsg.lvl}">${esc(recallMsg.t)}</div>` : "";
   if (!c) { $("#recallOut").innerHTML = msg || (recallBusy ? "" : `<p class="muted" style="font-size:.88rem">See any safety recalls for this model and year.</p>`); return; }
-  const n = c.items.length, park = c.items.some(r => r.parkIt || r.parkOutSide);
+  const n = c.items.length, open = openList(c), park = open.some(r => r.parkIt || r.parkOutSide), closedN = n - open.length;
   $("#recallOut").innerHTML = `${msg}<div class="row between" style="gap:10px"><div><b id="recallCount">${n ? n + " recall" + (n > 1 ? "s" : "") : "No recalls"}</b> <span class="muted" style="font-size:.88rem">for the ${esc(vehicleName(c))}</span><br><span class="muted" style="font-size:.82rem">Checked ${esc(new Date(c.at).toLocaleDateString([], { dateStyle: "medium" }))}${c.vin !== (inp.value || "").toUpperCase() && inp.value ? " for VIN " + esc(c.vin) : ""}</span></div>${n ? `<button class="btn small" id="recallSee" type="button">See all</button>` : ""}</div>
+    ${n ? (open.length ? `<div class="notice warn" id="recallOpen"><b>${open.length} open recall${open.length > 1 ? "s" : ""}${closedN ? `, ${closedN} marked closed` : ""}.</b> ${closedN ? `Open: ${esc(open.slice(0, 3).map(r => titleCase(r.component.split(":").pop() || "Recall")).join(", "))}${open.length > 3 ? "…" : ""}. ` : "Mark the ones already fixed (or that don't apply) as closed under See all. "}Recall repairs are free at a Honda dealer.</div>` : `<div class="notice ok" id="recallOpen"><b>All ${n} recalls marked closed.</b> New recalls will show here as open.</div>`) : ""}
     ${park ? `<div class="notice crit"><b>One of these recalls says not to drive or to park outside.</b> Check whether your van has had the repair.</div>` : ""}
     ${n ? `<p style="font-size:.86rem">This lists every recall for the model and year. To see which are still open for your van, <a href="${esc(nhtsaVinUrl(c.vin))}" target="_blank" rel="noopener">check your VIN on nhtsa.gov</a> or ask a Honda dealer. Recall repairs are free.</p>` : ""}`;
   const b = $("#recallSee"); if (b) b.onclick = openRecalls;
 }
+function recallItemHtml(c, r) {
+  const closed = isClosed(c, r);
+  return `<details class="help recall${closed ? " closed" : " open"}" data-rid="${esc(r.id)}"><summary><span><b>${esc(titleCase(r.component.split(":").pop() || "Recall"))}</b> ${closed ? `<span class="chip ok">Closed</span>` : `<span class="chip warn">Open</span>`}<br><span class="muted" style="font-size:.82rem">${esc(recallDate(r))} · NHTSA ${esc(r.id)}</span></span></summary><div class="prose">
+      ${recallChips(r) ? `<div class="row" style="gap:6px">${recallChips(r)}</div>` : ""}
+      <p>${esc(r.summary)}</p>${r.consequence ? `<p><b>Risk:</b> ${esc(r.consequence)}</p>` : ""}${r.remedy ? `<p><b>Fix:</b> ${esc(r.remedy)}</p>` : ""}
+      <button class="btn small" type="button" data-rmark="${closed ? "open" : "closed"}">${closed ? "Reopen: not fixed on my van" : "Mark closed: fixed or doesn't apply"}</button></div></details>`;
+}
+function recallSheetHtml(c) {
+  const open = openList(c), closed = c.items.filter(r => isClosed(c, r));
+  return `<header><div class="t"><span class="label">${esc(vehicleName(c))}</span><h2>${c.items.length} recall${c.items.length === 1 ? "" : "s"}</h2></div><button class="close" aria-label="Close">×</button></header>
+    <p class="muted" style="font-size:.88rem">${c.demo ? "Sample data for the demo van" : "From NHTSA"}, checked ${esc(new Date(c.at).toLocaleDateString([], { dateStyle: "medium" }))}. NHTSA lists every recall for the model and year. <a href="${esc(nhtsaVinUrl(c.vin))}" target="_blank" rel="noopener">Check which are open for your VIN</a>, then mark the rest closed.</p>
+    <div class="row" style="gap:8px">${open.length ? `<button class="btn small" type="button" id="recallAllClosed">Mark all closed</button>` : ""}${closed.length ? `<button class="btn small" type="button" id="recallAllOpen">Mark all open</button>` : ""}</div>
+    <span class="label">Open (${open.length})</span>
+    <div class="stack" id="recallList" style="gap:10px">${open.map(r => recallItemHtml(c, r)).join("") || `<p class="muted">No open recalls.</p>`}</div>
+    ${closed.length ? `<details class="help" id="recallClosedBox"><summary>Closed (${closed.length})</summary><div class="stack" style="gap:10px;padding:0 10px 10px">${closed.map(r => recallItemHtml(c, r)).join("")}</div></details>` : ""}`;
+}
+function wireRecallSheet(c) {
+  const root = topSheet(); if (!root) return;
+  const redraw = () => { const keepClosed = !!(root.querySelector("#recallClosedBox") || {}).open; root.querySelector(".sheet").innerHTML = recallSheetHtml(c); const box = root.querySelector("#recallClosedBox"); if (box && keepClosed) box.open = true; const x = root.querySelector(".close"); if (x) x.onclick = () => closeSheet(); wireRecallSheet(c); renderRecalls(); };
+  root.querySelectorAll("[data-rmark]").forEach(b => b.onclick = () => { setRecallClosed(c, [b.closest("[data-rid]").dataset.rid], b.dataset.rmark === "closed"); redraw(); });
+  const all = root.querySelector("#recallAllClosed"); if (all) all.onclick = () => { setRecallClosed(c, c.items.map(r => r.id), true); redraw(); };
+  const none = root.querySelector("#recallAllOpen"); if (none) none.onclick = () => { setRecallClosed(c, c.items.map(r => r.id), false); redraw(); };
+}
 function openRecalls() {
   const c = recallCache(); if (!c) return;
-  openSheet(`<header><div class="t"><span class="label">${esc(vehicleName(c))}</span><h2>${c.items.length} recall${c.items.length === 1 ? "" : "s"}</h2></div><button class="close" aria-label="Close">×</button></header>
-    <p class="muted" style="font-size:.88rem">${c.demo ? "Sample data for the demo van" : "From NHTSA"}, checked ${esc(new Date(c.at).toLocaleDateString([], { dateStyle: "medium" }))}. Newest first. <a href="${esc(nhtsaVinUrl(c.vin))}" target="_blank" rel="noopener">See which are open for your VIN</a>.</p>
-    <div class="stack" id="recallList" style="gap:10px">${c.items.map(r => `<details class="help recall"><summary><span><b>${esc(titleCase(r.component.split(":").pop() || "Recall"))}</b><br><span class="muted" style="font-size:.82rem">${esc(recallDate(r))} · NHTSA ${esc(r.id)}</span></span></summary><div class="prose">
-      ${recallChips(r) ? `<div class="row" style="gap:6px">${recallChips(r)}</div>` : ""}
-      <p>${esc(r.summary)}</p>${r.consequence ? `<p><b>Risk:</b> ${esc(r.consequence)}</p>` : ""}${r.remedy ? `<p><b>Fix:</b> ${esc(r.remedy)}</p>` : ""}</div></details>`).join("")}</div>`);
+  openSheet(recallSheetHtml(c)); wireRecallSheet(c);
 }
 
 /* ---------- shareable health report ---------- */
@@ -2521,8 +2556,8 @@ function reportModel(o) {
       note: `${ts.length} tests read ${state.m06.at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${nf ? nf + " failed" : "none failed"}${nr ? ", " + nr + " not run yet" : ""}. The van decides pass or fail; "near limit" means a passing reading close to Honda's limit.` });
   }
   const rc = recallCache();
-  if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: rc.items.map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), sub: recallDate(r) + ((r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
-    note: `All NHTSA recalls for the ${vehicleName(rc)}, checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}. Whether each one has been repaired on this van can be checked by VIN at nhtsa.gov/recalls.` });
+  if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: [...openList(rc), ...rc.items.filter(r => isClosed(rc, r))].map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), tag: isClosed(rc, r) ? { t: "Closed", c: "ok" } : { t: "Open", c: "warn" }, sub: recallDate(r) + (!isClosed(rc, r) && (r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
+    note: `All NHTSA recalls for the ${vehicleName(rc)}, checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}: ${openList(rc).length} open, ${rc.items.length - openList(rc).length} marked closed by the owner. Whether each one has been repaired on this van can be checked by VIN at nhtsa.gov/recalls.` });
   const parts = MAINT.map(it => ({ it, st: maintStatus(it.id), d: md.items[it.id] || {} })).filter(x => x.st || x.d.lastDate || x.d.lastMi);
   if (parts.length) S.push({ h: "Parts age", rows: parts.map(({ it, st, d }) => ({ k: it.name, v: [d.lastDate ? "Last done " + new Date(d.lastDate + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "", num0(d.lastMi) != null ? "at " + (+d.lastMi).toLocaleString() + " mi" : ""].filter(Boolean).join(" ") || "—", tag: st ? { t: st.grade === "plan" ? "Due" : st.grade === "watch" ? "Due soon" : "OK", c: GR[st.grade].c } : null })) });
   const svc = services().sort(byNewest);
@@ -2662,8 +2697,8 @@ function askHealth() {
 function askRecalls() {
   const rc = recallCache();
   if (!rc) return { title: "Recalls", lines: ["Recalls haven't been checked yet. Go to More → Recalls and tap Check recalls."] };
-  const n = rc.items.length, park = rc.items.filter(r => r.parkIt || r.parkOutSide);
-  return { title: "Recalls", lines: [n ? `${plural(n, "recall")} listed for the ${vehicleName(rc)} (checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}).` : "No recalls are listed for this model and year.", ...rc.items.slice(0, 3).map(r => `${titleCase(r.component.split(":").pop() || "Recall")} (${recallDate(r)}).`), ...(park.length ? ["One or more say to park outside or not drive until repaired. Check whether yours has been fixed."] : []), ...(n ? ["Recall repairs are free at a Honda dealer. Check which are still open for your VIN at nhtsa.gov/recalls."] : [])] };
+  const n = rc.items.length, op = openList(rc), park = op.filter(r => r.parkIt || r.parkOutSide);
+  return { title: "Recalls", lines: [n ? `${plural(n, "recall")} listed for the ${vehicleName(rc)} (checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}). ${op.length} open, ${n - op.length} marked closed.` : "No recalls are listed for this model and year.", ...op.slice(0, 3).map(r => `${titleCase(r.component.split(":").pop() || "Recall")} (${recallDate(r)}).`), ...(park.length ? ["One or more say to park outside or not drive until repaired. Check whether yours has been fixed."] : []), ...(n ? ["Recall repairs are free at a Honda dealer. Check which are still open for your VIN at nhtsa.gov/recalls."] : [])] };
 }
 function askReady() {
   if (!state.monitors) return { title: "Emissions readiness", lines: ["Readiness hasn't been read yet. Connect to the van, then check More → Readiness monitors."] };
@@ -3001,7 +3036,7 @@ const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID ?? "57823011336-c57a4ibll
 const G_AUTH = "https://accounts.google.com/o/oauth2/v2/auth", G_API = "https://www.googleapis.com/drive/v3", G_UP = "https://www.googleapis.com/upload/drive/v3", G_REVOKE = "https://oauth2.googleapis.com/revoke";
 const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata", SYNC_FILE = "myvan-sync.json", SYNC_FORMAT = 1, SYNC_DELAY = 4000;
 // What travels between devices. Display settings (units, theme, pins, views) stay per device.
-const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|selftests|note:.+|chk:.+)$/.test(k);
+const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|recallClosed|selftests|note:.+|chk:.+)$/.test(k);
 // Sync's own bookkeeping uses another prefix, so it never ends up in a backup file.
 const ss = {
   get(k, d) { try { const v = localStorage.getItem("odxsync:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
