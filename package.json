@@ -5,7 +5,8 @@
   "scripts": {
     "check": "node scripts/check.mjs",
     "test": "npm run check && playwright test",
-    "serve": "npx --yes http-server -p 8080 -c-1 ."
+    "serve": "npx --yes http-server -p 8080 -c-1 .",
+    "csp": "node scripts/csp.mjs --write"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1"
