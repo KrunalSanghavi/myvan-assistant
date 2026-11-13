@@ -814,9 +814,9 @@ const demo = {
     };
   },
   m06: (() => {
-    const m = { 0x01: [[0x81, 0x10, 180, 0, 400]], 0x05: [[0x81, 0x10, 205, 0, 400]], 0x02: [[0x08, 0x0B, 820, 450, 65535]], 0x06: [[0x08, 0x0B, 805, 450, 65535]],
+    const m = { 0x01: [[0x81, 0x10, 180, 0, 400]], 0x05: [[0x81, 0x10, 205, 0, 400], [0x80, 0x14, 188, 0, 200]], 0x02: [[0x08, 0x0B, 820, 450, 65535]], 0x06: [[0x08, 0x0B, 805, 450, 65535]],
       0x21: [[0x80, 0x20, 46, 0, 102]], 0x22: [[0x80, 0x20, 80, 0, 102]], 0x35: [[0x80, 0x1C, 120, 0, 500]], 0x36: [[0x80, 0x1C, 140, 0, 500]],
-      0x3A: [[0x80, 0x29, 200, 0, 1000]], 0x3B: [[0x80, 0x29, 420, 0, 1000]], 0x3C: [[0x80, 0x29, 1050, 0, 1000]],
+      0x3A: [[0x80, 0x29, 200, 0, 1000], [0xC2, 0x29, 0, 0, 0]], 0x3B: [[0x80, 0x29, 420, 0, 1000]], 0x3C: [[0x80, 0x29, 1050, 0, 1000]],
       0x41: [[0x81, 0x10, 22, 0, 120]], 0x45: [[0x81, 0x10, 25, 0, 120]], 0x42: [[0x81, 0x10, 40, 0, 150]], 0x46: [[0x81, 0x10, 43, 0, 150]] };
     const avg = [0, 3, 0, 0, 0, 0], last = [0, 2, 0, 0, 0, 0];
     for (let c = 1; c <= 6; c++) m[0xA1 + c] = [[0x0B, 0x24, avg[c - 1], 0, 65535], [0x0C, 0x24, last[c - 1], 0, 65535]];
@@ -952,7 +952,7 @@ async function connect(kind) {
   connectBusy = true; connectMsg = ""; renderConnect("Opening adapter…");
   let t;
   try {
-    if (kind === "demo") { t = demoTransport(); demoDrives = seedDemoDrives(); }
+    if (kind === "demo") { t = demoTransport(); demoDrives = seedDemoDrives(); state.m06 = null; }   // the demo reads its own self-tests
     else if (kind === "ble") {
       if (!navigator.bluetooth) throw new Error("NOAPI_BLE");
       t = await bleTransport();
@@ -1587,12 +1587,16 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && sheets.len
 function watchHtml(keys) {
   return keys.filter(k => P[k]).map(k => `<div>${esc(P[k].name)}: <b>${V[k] != null ? fmt(k) : "—"}</b></div>`).join("");
 }
-function openGuide(code) {
+function openGuide(code, opt = {}) {
   const g = guideFor(code);
   const done = store.get("chk:" + code, []);
   const isCode = /^[PCBU][0-9A-F]{4}$/.test(code);
+  // Opened from a part on the Health screen: say plainly whether the van has actually set this code.
+  const sc = state.codes, hasCode = sc && [...sc.stored, ...sc.pending, ...sc.permanent].includes(code);
+  const partNote = opt.fromPart && isCode && !hasCode ? `<div class="notice" id="noCodeNote">${sc ? "Your van hasn't set this code." : "Trouble codes haven't been read yet, so this code may not be set."} These are the steps for this code, shown to help check the ${esc(opt.fromPart.toLowerCase())}. They don't mean a fault was found.</div>` : "";
   const html = `
     <header><div class="t">${isCode ? `<span class="code" style="align-self:flex-start">${esc(code)}</span>` : ""}<h2>${esc(g.t)}</h2><div class="row" style="gap:6px"><span class="chip ${g.sev}">${SEV[g.sev]}</span>${g.generic ? '<span class="chip low">General guidance</span>' : ""}</div></div><button class="close" aria-label="Close">×</button></header>
+    ${partNote}
     <div class="block prose"><p>${esc(g.what)}</p></div>
     ${freezeHtml(code)}
     <div class="group"><span class="label">Common causes</span><div class="block"><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:.93rem">${g.causes.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div></div>
@@ -1690,6 +1694,7 @@ function applyBackup(b) {
 // Re-read saved data and redraw after a restore or a sync changed it.
 function refreshAfterData() {
   driveCache = null; maintCache = null; units = store.get("units", "us");
+  if (state.mode !== "demo") { const st = savedSelfTests(); if (st && (!state.m06 || st.at > state.m06.at)) state.m06 = st; }
   renderMaint(); renderVehicle(); renderHealth();
   if (state.elm) { buildTiles(); renderLive(); }
 }
@@ -1705,8 +1710,10 @@ function decodeTest(r) {
   const s = uas(r[2]);
   const w = (h, l) => { let v = h * 256 + l; if (s.signed && v > 32767) v -= 65536; return v; };
   const v = w(r[3], r[4]), min = w(r[5], r[6]), max = w(r[7], r[8]);
-  return { mid: r[0], tid: r[1], uasid: r[2], signed: s.signed, scale: s, v, min, max, pass: v >= min && v <= max };
+  return { mid: r[0], tid: r[1], uasid: r[2], signed: s.signed, scale: s, v, min, max, pass: v >= min && v <= max, raw: [...r] };
 }
+// Value, min and max all 0 is how the van says a test has no result yet (not run since the last reset).
+const notRun = t => t.v === 0 && t.min === 0 && t.max === 0 && !isMisfire(t);
 function fmtTest(t, x) {
   const v = x * t.scale.f + t.scale.off, a = Math.abs(v);
   return (a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3)) + (t.scale.unit ? " " + t.scale.unit : "");
@@ -1731,8 +1738,16 @@ function closeness(t) {
 const isMisfire = t => t.mid >= 0xA1 && t.mid <= 0xAD && (t.tid === 0x0B || t.tid === 0x0C);
 function testGrade(t) {
   if (isMisfire(t)) return { grade: t.v >= 5 ? "plan" : t.v >= 1 ? "watch" : "good", margin: null };
+  if (notRun(t)) return { grade: "unknown", margin: null, notRun: true };
+  // A test the van passed is at most Watch: one reading near the limit isn't a reason to replace a part.
   const c = closeness(t);
-  return { grade: !t.pass ? "fail" : c >= 0.85 ? "plan" : c >= 0.6 ? "watch" : "good", margin: Math.round(Math.max(0, 1 - Math.min(c, 1)) * 100) };
+  return { grade: !t.pass ? "fail" : c >= 0.85 ? "watch" : "good", margin: Math.round(Math.max(0, 1 - Math.min(c, 1)) * 100) };
+}
+// The latest self-test results are saved (raw bytes) so they survive a restart, sync and appear in the report.
+function savedSelfTests() {
+  const s = store.get("selftests", null);
+  if (!s || !Array.isArray(s.rows) || !s.rows.length) return null;
+  try { return { at: new Date(s.at), tests: s.rows.map(decodeTest), count: s.count || 0, saved: true }; } catch { return null; }
 }
 async function readMode06() {
   if (!state.elm) return;
@@ -1754,6 +1769,7 @@ async function readMode06() {
     }
   }
   state.m06 = { at: new Date(), tests, count: sup.size };
+  if (state.mode !== "demo" && tests.length) store.set("selftests", { at: Date.now(), count: sup.size, rows: tests.map(t => t.raw) });
   renderHealth(); renderStrip();
 }
 
@@ -2096,10 +2112,10 @@ function evalComponent(c) {
   const tests = state.m06 && c.mids ? state.m06.tests.filter(t => c.mids.includes(t.mid)) : [];
   for (const t of tests) {
     const g = testGrade(t); grade = worse(grade, g.grade); ev.push({ t, ...g });
-    if (g.grade === "good") continue;
+    if (g.grade === "good" || g.notRun) continue;
     if (isMisfire(t)) { if (t.tid === 0x0B && t.mid !== 0xA1) why.push(`Cylinder ${t.mid - 0xA1} is misfiring about ${t.v} time${t.v === 1 ? "" : "s"} per drive on average, not enough to set a code yet.`); }
     else if (!t.pass) why.push(`${MID_NAME[t.mid]} failed its last self-test: ${fmtTest(t, t.v)}, ${limitText(t)}.`);
-    else why.push(`${MID_NAME[t.mid]} self-test has only ${g.margin}% margin left before Honda's limit.`);
+    else why.push(`${MID_NAME[t.mid]} passed its self-test, close to Honda's limit (${g.margin}% margin left).`);
   }
   for (const k of c.trends || []) {
     const res = trendGrade(TR[k]); trends.push({ cfg: TR[k], res });
@@ -2115,7 +2131,7 @@ function evalComponent(c) {
     }
   }
   if (c.maint) { const a = maintStatus(c.maint); if (a) { grade = worse(grade, a.grade); if (a.grade !== "good") why.push(a.msg); } }
-  const hint = state.m06 && c.mids && !c.trends ? "This van didn't report a self-test for this part." : c.trends ? "Needs a few recorded drives." : "Run a self-test check while connected.";
+  const hint = tests.length && tests.every(notRun) ? "Its self-tests haven't run yet since the last reset. They run during normal driving." : state.m06 && c.mids && !c.trends ? "This van didn't report a self-test for this part." : c.trends ? "Needs a few recorded drives." : "Run a self-test check while connected.";
   return { grade, why: [...new Set(why)], ev, trends, hint };
 }
 function healthSummary() {
@@ -2140,10 +2156,10 @@ function renderHealth() {
   const dr = drives(), lvl = nBad ? "crit" : nWatch ? "warn" : "";
   const head = !nKnown ? "No health data yet" : nBad ? `${nBad} part${nBad > 1 ? "s" : ""} need${nBad > 1 ? "" : "s"} attention` : nWatch ? `${nWatch} part${nWatch > 1 ? "s" : ""} to keep an eye on` : "Everything looks healthy";
   const sub = `${state.m06 ? "Self-tests read " + timeAgo(state.m06.at) : "Self-tests not read yet"} · ${dr.length} drive${dr.length === 1 ? "" : "s"} recorded${state.mode === "demo" ? " (demo history)" : ""}`;
-  const insights = evs.filter(x => GR[x.e.grade].r >= 2).sort((a, b) => GR[b.e.grade].r - GR[a.e.grade].r).flatMap(x => x.e.why.slice(0, 2).map(w => ({ x, w })));
+  const insights = evs.filter(x => GR[x.e.grade].r >= 2 && x.e.why.length).sort((a, b) => GR[b.e.grade].r - GR[a.e.grade].r);   // one row per part
   out.innerHTML = `
     <div class="hero ${lvl}"><span class="hero-ico">${lvl ? ICO_WARN : ICO_OK}</span><div class="t"><h3>${head}</h3><p>${esc(sub)}</p></div><button class="btn small" id="m06Btn">${state.elm ? "Check self-tests" : "Connect"}</button></div>
-    ${insights.length ? `<div class="group"><span class="label">What I'm seeing</span><div class="list">${insights.map(({ x, w }) => `<div class="item"><div class="body"><div class="row" style="gap:8px"><b>${esc(x.c.name)}</b><span class="muted" style="font-size:.84rem">${esc(x.c.sub || "")}</span><span class="chip ${GR[x.e.grade].c}">${esc(gradeText(x.c, x.e.grade))}</span></div><p class="muted" style="font-size:.9rem">${esc(w)}</p></div><button class="btn small" data-comp="${x.c.id}">Details</button></div>`).join("")}</div></div>` : ""}
+    ${insights.length ? `<div class="group"><span class="label">What I'm seeing</span><div class="list">${insights.map(x => `<div class="item insight"><div class="body"><div class="row" style="gap:8px"><b>${esc(x.c.name)}</b><span class="muted" style="font-size:.84rem">${esc(x.c.sub || "")}</span><span class="chip ${GR[x.e.grade].c}">${esc(gradeText(x.c, x.e.grade))}</span></div>${x.e.why.slice(0, 2).map(w => `<p class="muted" style="font-size:.9rem">${esc(w)}</p>`).join("")}</div><button class="btn small" data-comp="${x.c.id}">Details</button></div>`).join("")}</div></div>` : ""}
     <div class="group"><span class="label">Report card</span><div class="hgrid">${evs.map(({ c, e }) => healthCard(c, e)).join("")}</div></div>`;
   out.querySelectorAll("[data-comp]").forEach(b => b.onclick = () => openComponent(b.dataset.comp));
   $("#m06Btn").onclick = async () => {
@@ -2249,7 +2265,7 @@ function openComponent(id) {
     plan: c.planLabel ? "This needs attention soon. Use the troubleshooting steps to confirm the cause before buying parts." : "Plan to replace this part soon. Confirm it with the troubleshooting steps or a mechanic before buying it.",
     fail: "It failed its own self-test, and a trouble code usually follows. Confirm with the troubleshooting steps before replacing parts."
   }[g];
-  const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list">${e.ev.map(x => `<div class="item"><div class="body"><b>${esc(MID_NAME[x.t.mid])}</b><span class="muted" style="font-size:.84rem">${esc(TID_NAME[x.t.tid] || "Honda test " + hex2(x.t.tid))}</span>${x.margin != null ? `<span class="meter ${GR[x.grade].c}"><i style="width:${x.margin}%"></i></span>` : ""}</div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(isMisfire(x.t) ? x.t.v + " misfires" : fmtTest(x.t, x.t.v))}</b><br><span class="muted" style="font-size:.8rem">${esc(isMisfire(x.t) ? (x.t.tid === 0x0B ? "per drive, average" : "last drive") : limitText(x.t))}</span></div></div>`).join("")}</div></div>` : "";
+  const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list">${e.ev.map(x => `<div class="item"><div class="body"><b>${esc(MID_NAME[x.t.mid])}</b><span class="muted" style="font-size:.84rem">${esc(TID_NAME[x.t.tid] || "Honda test " + hex2(x.t.tid))}</span>${x.margin != null ? `<span class="meter ${GR[x.grade].c}"><i style="width:${x.margin}%"></i></span>` : ""}</div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(x.notRun ? "Not run yet" : isMisfire(x.t) ? x.t.v + " misfires" : fmtTest(x.t, x.t.v))}</b><br><span class="muted" style="font-size:.8rem">${esc(x.notRun ? "no result since the last reset" : isMisfire(x.t) ? (x.t.tid === 0x0B ? "per drive, average" : "last drive") : limitText(x.t))}</span></div></div>`).join("")}</div>${e.ev.some(x => x.margin != null && !x.notRun) ? `<p class="muted" style="font-size:.84rem">The van decides pass or fail on each test. The bar shows how far the reading is from Honda's limit. A passing test is never a reason on its own to replace a part.</p>` : ""}</div>` : "";
   const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div></div>`).join("");
   const ms = c.maint ? maintStatus(c.maint) : null;
   openSheet(`<header><div class="t"><span class="label">${esc(c.sub || "")}</span><h2>${esc(c.name)}</h2><div class="row" style="gap:6px"><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></div></div><button class="close" aria-label="Close">×</button></header>
@@ -2258,7 +2274,7 @@ function openComponent(id) {
     ${trends ? `<div class="group"><span class="label">Trend across drives</span>${trends}</div>` : ""}
     ${c.maint ? `<div class="group"><span class="label">Part age</span><div class="block"><p style="font-size:.92rem">${ms ? esc(ms.msg) : "Add when this was last replaced under Parts age and maintenance on the Health screen."}</p></div></div>` : ""}
     ${c.guide ? `<button class="btn primary" id="compGuide">Open troubleshooting steps</button>` : ""}`);
-  const b = $("#compGuide"); if (b) b.onclick = () => openGuide(c.guide);
+  const b = $("#compGuide"); if (b) b.onclick = () => openGuide(c.guide, { fromPart: c.name });
 }
 
 /* ---------- recalls (NHTSA; the only network call, made when the owner asks) ---------- */
@@ -2270,7 +2286,7 @@ const recallCache = () => (state.mode === "demo" && demoRecall) || store.get("re
 // The demo van answers with sample recalls and never contacts NHTSA.
 const DEMO_RECALLS = [
   { id: "19V299000", date: "12/04/2019", component: "POWER TRAIN:AUTOMATIC TRANSMISSION", summary: "Honda (American Honda Motor Co.) is recalling certain 2018-2019 Odyssey vehicles. Loose battery terminal connections or a degraded battery may cause the Transmission Control Unit (TCU) to unexpectedly reboot. Upon rebooting, the TCU may shift the transmission to the \"Park\" position, possibly damaging the parking rod.", consequence: "A damaged parking rod can allow the vehicle to roll when parked, increasing the risk of a crash or injury.", remedy: "Dealers will ensure the battery terminal connections are secure and will update the TCU software, free of charge.", parkIt: false, parkOutSide: false },
-  { id: "DEMO0001", date: "03/15/2021", component: "ELECTRICAL SYSTEM:SAMPLE", summary: "Sample recall for the demo van, to show how a park-outside warning looks. Not a real recall.", consequence: "None. This is sample data.", remedy: "None needed.", parkIt: false, parkOutSide: true }
+  { id: "DEMO0001", date: "15/03/2021", component: "ELECTRICAL SYSTEM:SAMPLE", summary: "Sample recall for the demo van, to show how a park-outside warning looks. Not a real recall.", consequence: "None. This is sample data.", remedy: "None needed.", parkIt: false, parkOutSide: true }
 ];
 async function getJson(url, ms = 15000) {
   const ctl = typeof AbortController === "function" ? new AbortController() : null;
@@ -2302,7 +2318,8 @@ async function checkRecalls(vin) {
   }
   recallBusy = false; renderRecalls(); if (current === "report") renderReport();
 }
-const recallTime = r => { const m = /^(\d\d)\/(\d\d)\/(\d{4})$/.exec(r.date); return m ? new Date(+m[3], m[1] - 1, +m[2]).getTime() : 0; };
+// NHTSA sends dd/mm/yyyy. Read mm/dd only when the second number can't be a month.
+const recallTime = r => { const m = /^(\d\d?)\/(\d\d?)\/(\d{4})$/.exec(r.date || ""); if (!m) return 0; let [d, mo] = [+m[1], +m[2]]; if (mo > 12 && d <= 12) [d, mo] = [mo, d]; return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? new Date(+m[3], mo - 1, d).getTime() : 0; };
 const recallDate = r => recallTime(r) ? new Date(recallTime(r)).toLocaleDateString([], { dateStyle: "medium" }) : r.date;
 const titleCase = t => t.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 const vehicleName = c => `${c.year} ${titleCase(c.make)} ${c.model.toUpperCase() === c.model ? titleCase(c.model) : c.model}`;
@@ -2369,6 +2386,11 @@ function reportModel(o) {
   } else S.push({ h: "Trouble codes", rows: [], empty: "Codes weren't read before this report was made." });
   if (state.monitors) S.push({ h: "Readiness monitors", rows: state.monitors.filter(m => m.avail).map(m => ({ k: m.n, v: m.done ? "Ready" : "Not ready", tag: { t: m.done ? "Ready" : "Not ready", c: m.done ? "ok" : "warn" } })), note: "Monitors reset to Not ready after codes are cleared or the battery is disconnected." });
   S.push({ h: "Report card", rows: evs.map(({ c, e }) => ({ k: c.name + (c.sub ? ", " + c.sub : ""), v: "", tag: { t: gradeText(c, e.grade), c: GR[e.grade].c }, sub: e.why[0] || (e.grade === "good" ? "Self-tests and recent drives look normal." : "") })) });
+  if (state.m06 && state.m06.tests.length) {
+    const ts = state.m06.tests, nr = ts.filter(notRun).length, nf = ts.filter(t => !t.pass && !notRun(t)).length;
+    S.push({ h: "Self-test results", rows: ts.map(t => { const g = testGrade(t); return { k: (MID_NAME[t.mid] || "Test group " + hex2(t.mid)) + ", " + (TID_NAME[t.tid] || "Honda test " + hex2(t.tid)), v: g.notRun ? "Not run yet" : isMisfire(t) ? t.v + " misfires" : fmtTest(t, t.v), sub: g.notRun ? "" : isMisfire(t) ? (t.tid === 0x0B ? "Per drive, average" : "Last drive") : limitText(t)[0].toUpperCase() + limitText(t).slice(1), tag: g.notRun || isMisfire(t) ? null : { t: t.pass ? (g.grade === "watch" ? "Passed, near limit" : "Passed") : "Failed", c: t.pass ? (g.grade === "watch" ? "warn" : "ok") : "crit" } }; }),
+      note: `${ts.length} tests read ${state.m06.at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}: ${nf ? nf + " failed" : "none failed"}${nr ? ", " + nr + " not run yet" : ""}. The van decides pass or fail; "near limit" means a passing reading close to Honda's limit.` });
+  }
   const rc = recallCache();
   if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: rc.items.map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), sub: recallDate(r) + ((r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
     note: `All NHTSA recalls for the ${vehicleName(rc)}, checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}. Whether each one has been repaired on this van can be checked by VIN at nhtsa.gov/recalls.` });
@@ -2746,7 +2768,7 @@ const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID ?? "57823011336-c57a4ibll
 const G_AUTH = "https://accounts.google.com/o/oauth2/v2/auth", G_API = "https://www.googleapis.com/drive/v3", G_UP = "https://www.googleapis.com/upload/drive/v3", G_REVOKE = "https://oauth2.googleapis.com/revoke";
 const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata", SYNC_FILE = "myvan-sync.json", SYNC_FORMAT = 1, SYNC_DELAY = 4000;
 // What travels between devices. Display settings (units, theme, pins, views) stay per device.
-const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|note:.+|chk:.+)$/.test(k);
+const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|selftests|note:.+|chk:.+)$/.test(k);
 // Sync's own bookkeeping uses another prefix, so it never ends up in a backup file.
 const ss = {
   get(k, d) { try { const v = localStorage.getItem("odxsync:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -3162,6 +3184,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $("#appVer").textContent = APP_VERSION;
+state.m06 = savedSelfTests();
 renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth(); renderRecalls(); renderSync();
 if (authRedirected) afterSignIn(); else syncNow(false);
 </script>
