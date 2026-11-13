@@ -295,6 +295,10 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
 .hcard.warn .meter i,.meter.warn i{background:var(--warn)}
 .hcard.crit .meter i,.meter.crit i{background:var(--crit)}
 .mlab{font-size:.75rem;color:var(--muted);margin-top:-4px}
+.tst + .tst,.tgrp + .tst,.tst + .tgrp{border-top:1px solid var(--line)}
+.tgrp{padding:12px 16px 4px;display:flex;flex-direction:column;gap:2px}.tgrp p{font-size:.84rem;margin:0}
+.tst summary{list-style:none;cursor:pointer}.tst summary::-webkit-details-marker{display:none}
+.tst[open] summary{padding-bottom:6px}.tst-x{padding:0 16px 14px;font-size:.88rem;display:flex;flex-direction:column;gap:6px}.tst-x p{margin:0}
 .item .body .meter{margin-top:5px;max-width:220px}
 .inp{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;min-height:40px;width:100%;min-width:0}
 #m-odo{max-width:160px}
@@ -1603,6 +1607,7 @@ function openGuide(code, opt = {}) {
     <div class="group"><div class="row" style="justify-content:space-between"><span class="label">Steps, simplest first</span><button class="link" id="resetSteps" style="font-size:.85rem">Reset</button></div>
       <ol class="steps">${g.steps.map((s, i) => `<li class="${done.includes(i) ? "done" : ""}"><label><input type="checkbox" data-i="${i}" ${done.includes(i) ? "checked" : ""}><span class="n">${i + 1}</span><span class="txt">${esc(s)}</span></label></li>`).join("")}</ol></div>
     ${g.watch && g.watch.length ? `<div class="group"><span class="label">Watch these live readings</span><div class="watch" id="watchBox">${watchHtml(g.watch)}</div>${state.elm ? "" : '<p class="muted" style="font-size:.85rem">Connect to see them update.</p>'}</div>` : ""}
+    ${askBoxHtml(["What does this mean for my van?", "Is it safe to drive?", "What should I check first?"])}
     <div class="group"><label class="label" for="noteBox">Your notes from the service manual</label><textarea id="noteBox" placeholder="Specs, connector numbers, test results…">${esc(store.get("note:" + code, ""))}</textarea></div>
     <p class="muted" style="font-size:.84rem">General diagnostic guidance for this engine, not Honda's official procedure. For exact specifications and pinpoint tests, see <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>.</p>`;
   openSheet(html, () => { const w = $("#watchBox"); if (w) w.innerHTML = watchHtml(g.watch); });
@@ -1613,6 +1618,7 @@ function openGuide(code, opt = {}) {
   });
   $("#resetSteps").onclick = () => { store.set("chk:" + code, []); topSheet().querySelectorAll(".steps input").forEach(cb => { cb.checked = false; cb.closest("li").classList.remove("done"); }); };
   $("#noteBox").oninput = e => store.set("note:" + code, e.target.value);
+  wireAskBox(topSheet(), `Trouble code ${code}: ${g.t}. ${hasCode ? "The van has this code set right now." : sc ? "The van has NOT set this code; the owner is reading the guide to understand it or to check a part." : "Codes haven't been read yet."}`);
 }
 function openParam(key) {
   const p = P[key]; if (!p) return;
@@ -1721,10 +1727,56 @@ function fmtTest(t, x) {
 const RAWMAX = t => t.signed ? 32767 : 65535, RAWMIN = t => t.signed ? -32768 : 0;
 function limitText(t) {
   const lo = t.min > RAWMIN(t), hi = t.max < RAWMAX(t);
-  if (lo && hi) return `limit ${fmtTest(t, t.min)} to ${fmtTest(t, t.max)}`;
-  if (hi) return `limit ${fmtTest(t, t.max)} max`;
-  if (lo) return `limit ${fmtTest(t, t.min)} min`;
-  return "no limit set";
+  if (lo && hi) return `passes between ${fmtTest(t, t.min)} and ${fmtTest(t, t.max)}`;
+  if (hi) return `passes at ${fmtTest(t, t.max)} or less`;
+  if (lo) return `passes at ${fmtTest(t, t.min)} or more`;
+  return "no pass/fail limit";
+}
+// Plain-English help for the self-test screen. Honda doesn't publish names for its own tests (80 and up),
+// so those are described from their group (MID) and the kind of reading their unit says they are.
+const MID_INFO = {
+  af: "The air-fuel sensor sits before the catalytic converter and tells the computer how rich or lean the engine is running. These tests check its heater, its signal range and how quickly it reacts.",
+  o2: "This oxygen sensor sits after the catalytic converter. Its signal shows how well the converter is cleaning the exhaust.",
+  cat: "Compares the oxygen sensors before and after the catalytic converter to judge how well it cleans the exhaust.",
+  vtc: "Checks that the variable valve timing moves the camshaft to where the computer asks, quickly enough.",
+  evap: "The van seals the fuel vapor system and watches the pressure. If it changes too fast, there's a leak. The large test finds a loose filler; the small and very small tests find tiny cracks or loose hoses.",
+  purge: "Checks that fuel vapor stored in the charcoal canister is drawn into the engine and burned.",
+  heat: "Checks the heater that warms the sensor up to working temperature quickly after a cold start.",
+  fuel: "Checks how much the computer has to correct the fuel mixture. Large corrections point to an air leak or weak fuel delivery.",
+  mis: "Counts misfires: times a cylinder didn't fire properly. 0 is normal."
+};
+const midInfo = m => MID_INFO[m === 0x01 || m === 0x05 ? "af" : m === 0x02 || m === 0x06 ? "o2" : m === 0x21 || m === 0x22 ? "cat" : m === 0x35 || m === 0x36 ? "vtc" : m >= 0x39 && m <= 0x3C ? "evap" : m === 0x3D ? "purge" : m >= 0x41 && m <= 0x46 ? "heat" : m === 0x81 || m === 0x82 ? "fuel" : m >= 0xA1 && m <= 0xAD ? "mis" : ""] || "";
+const UNIT_INFO = [
+  [/Ω$/, "Resistance", "Electrical resistance, in ohms (Ω). Used to check a sensor's element or heater circuit. Too high can mean a worn element, a weak heater or a poor connection."],
+  [/^(mV|V)$/, "Voltage", "The voltage the sensor puts out, or that the computer sees on its wire. Outside the range can mean a weak sensor or a wiring problem."],
+  [/^(mA|A)$/, "Current", "Electric current through the sensor or its heater, in amps (A) or milliamps (mA)."],
+  [/^(ms|s|min)$/, "Time", "How long something took, such as how quickly the sensor reacts when the mixture changes. Slower usually means an aging part."],
+  [/^Pa\/s$/, "Pressure change", "How fast pressure changes while the system is sealed. In leak tests, a fast change means a leak."],
+  [/kPa$/, "Pressure", "Pressure, in kilopascals (kPa)."],
+  [/^%$/, "Percent", "A percentage, such as how much of the expected flow or correction was measured."],
+  [/^(λ|A\/F)$/, "Air-fuel ratio", "The mixture of air to fuel. 1.00 λ (14.7 to 1) is ideal."],
+  [/°C$/, "Temperature", "Temperature, in degrees Celsius."],
+  [/^counts$/, "Count", "How many times something happened."],
+  [/^$/, "Score", "A ratio or score with no unit. Compare it only against its own limit."]
+];
+const unitInfo = u => (UNIT_INFO.find(([re]) => re.test(u)) || [null, "Reading", "Compare it against its own limit."]).slice(1);
+const testTitle = t => isMisfire(t) ? (t.tid === 0x0B ? "Misfires, 10-drive average" : "Misfires, last drive") : TID_NAME[t.tid] || unitInfo(t.scale.unit)[0] + " check";
+function testHelp(t, g) {
+  const [kind, what] = unitInfo(t.scale.unit), honda = !TID_NAME[t.tid] && !isMisfire(t);
+  const verdict = g.notRun ? "This test has no result yet. It runs during normal driving, and some only run after the van has been parked for several hours."
+    : isMisfire(t) ? "" : !t.pass ? `The van failed this test: ${fmtTest(t, t.v)}, and it ${limitText(t)}.`
+    : g.grade === "watch" ? `Passed, but close to the limit (${g.margin}% margin left). Watch whether it moves closer over the next few checks.` : "Passed with room to spare.";
+  return [isMisfire(t) ? "" : `${kind}: ${what}`, honda ? `Honda doesn't publish what test ${hex2(t.tid)} measures, so this is described from its group and its unit.` : "", verdict].filter(Boolean);
+}
+// Self-test rows grouped by what they test; tap a row for what it measures.
+function testListHtml(ev) {
+  const mids = [...new Set(ev.map(x => x.t.mid))];
+  return mids.map(mid => `<div class="tgrp"><b>${esc(MID_NAME[mid] || "Test group " + hex2(mid))}</b>${midInfo(mid) ? `<p class="muted">${esc(midInfo(mid))}</p>` : ""}</div>` + ev.filter(x => x.t.mid === mid).map(x => {
+    const t = x.t, val = x.notRun ? "Not run yet" : isMisfire(t) ? t.v + " misfire" + (t.v === 1 ? "" : "s") : fmtTest(t, t.v);
+    const rule = x.notRun ? "no result yet" : isMisfire(t) ? (t.tid === 0x0B ? "per drive, average" : "last drive") : limitText(t);
+    const tag = TID_NAME[t.tid] || isMisfire(t) ? "" : "Honda test " + hex2(t.tid) + " · ";
+    return `<details class="tst"><summary class="item"><div class="body"><b>${esc(testTitle(t))}</b><span class="muted" style="font-size:.84rem">${esc(tag)}tap for what this means</span>${x.margin != null ? `<span class="meter ${GR[x.grade].c}"><i style="width:${x.margin}%"></i></span>` : ""}</div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(val)}</b><br><span class="muted" style="font-size:.8rem">${esc(rule)}</span></div></summary><div class="tst-x">${testHelp(t, x).map(p => `<p>${esc(p)}</p>`).join("")}</div></details>`;
+  }).join("")).join("");
 }
 function closeness(t) {
   const lo = t.min > RAWMIN(t), hi = t.max < RAWMAX(t);
@@ -2265,7 +2317,7 @@ function openComponent(id) {
     plan: c.planLabel ? "This needs attention soon. Use the troubleshooting steps to confirm the cause before buying parts." : "Plan to replace this part soon. Confirm it with the troubleshooting steps or a mechanic before buying it.",
     fail: "It failed its own self-test, and a trouble code usually follows. Confirm with the troubleshooting steps before replacing parts."
   }[g];
-  const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list">${e.ev.map(x => `<div class="item"><div class="body"><b>${esc(MID_NAME[x.t.mid])}</b><span class="muted" style="font-size:.84rem">${esc(TID_NAME[x.t.tid] || "Honda test " + hex2(x.t.tid))}</span>${x.margin != null ? `<span class="meter ${GR[x.grade].c}"><i style="width:${x.margin}%"></i></span>` : ""}</div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(x.notRun ? "Not run yet" : isMisfire(x.t) ? x.t.v + " misfires" : fmtTest(x.t, x.t.v))}</b><br><span class="muted" style="font-size:.8rem">${esc(x.notRun ? "no result since the last reset" : isMisfire(x.t) ? (x.t.tid === 0x0B ? "per drive, average" : "last drive") : limitText(x.t))}</span></div></div>`).join("")}</div>${e.ev.some(x => x.margin != null && !x.notRun) ? `<p class="muted" style="font-size:.84rem">The van decides pass or fail on each test. The bar shows how far the reading is from Honda's limit. A passing test is never a reason on its own to replace a part.</p>` : ""}</div>` : "";
+  const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list" id="testList">${testListHtml(e.ev)}</div>${e.ev.some(x => x.margin != null && !x.notRun) ? `<p class="muted" style="font-size:.84rem">The van decides pass or fail on each test. The bar shows how far the reading is from Honda's limit: a fuller bar means more room to spare. A passing test is never a reason on its own to replace a part.</p>` : ""}</div>` : "";
   const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div></div>`).join("");
   const ms = c.maint ? maintStatus(c.maint) : null;
   openSheet(`<header><div class="t"><span class="label">${esc(c.sub || "")}</span><h2>${esc(c.name)}</h2><div class="row" style="gap:6px"><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></div></div><button class="close" aria-label="Close">×</button></header>
@@ -2273,7 +2325,9 @@ function openComponent(id) {
     ${tests}
     ${trends ? `<div class="group"><span class="label">Trend across drives</span>${trends}</div>` : ""}
     ${c.maint ? `<div class="group"><span class="label">Part age</span><div class="block"><p style="font-size:.92rem">${ms ? esc(ms.msg) : "Add when this was last replaced under Parts age and maintenance on the Health screen."}</p></div></div>` : ""}
+    ${askBoxHtml([`Should I worry about the ${c.name.toLowerCase()}?`, "What do these test results mean?", "What should I check first?"])}
     ${c.guide ? `<button class="btn primary" id="compGuide">Open troubleshooting steps</button>` : ""}`);
+  wireAskBox(topSheet(), `Part: ${c.name}${c.sub ? " (" + c.sub + ")" : ""}. App grade: ${gradeText(c, g)}. ${e.why.join(" ")} Self-test results: ${e.ev.map(x => `${testTitle(x.t)}${TID_NAME[x.t.tid] || isMisfire(x.t) ? "" : " (Honda test " + hex2(x.t.tid) + ")"} = ${x.notRun ? "not run yet" : isMisfire(x.t) ? x.t.v + " misfires" : fmtTest(x.t, x.t.v) + ", " + limitText(x.t) + (x.t.pass ? ", passed" : ", FAILED")}`).join("; ") || "none read"}.`);
   const b = $("#compGuide"); if (b) b.onclick = () => openGuide(c.guide, { fromPart: c.name });
 }
 
@@ -2683,8 +2737,54 @@ function mdLite(t) {
   return html + (list ? "</ul>" : "");
 }
 const googleUrl = q => "https://www.google.com/search?q=" + encodeURIComponent("2018 Honda Odyssey " + q);
+// "Ask about this" on guide and part sheets: the question goes out with what the owner is looking at.
+function askBoxHtml(chips) {
+  return `<div class="group askbox"><span class="label">Ask about this</span>
+    <form class="lookup gask-form"><input class="gask-in" aria-label="Ask about this" placeholder="Type a question" autocomplete="off" enterkeyhint="send" style="max-width:none;text-transform:none;font-family:inherit"><button class="btn primary" type="submit">Ask</button></form>
+    <div class="row" style="gap:6px">${chips.map(q => `<button class="btn small" type="button" data-gask="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+    <div class="gask-out stack" style="gap:8px" role="status" aria-live="polite"></div></div>`;
+}
+function wireAskBox(root, ctx) {
+  const box = root && root.querySelector(".askbox"); if (!box) return;
+  const inp = box.querySelector(".gask-in"), out = box.querySelector(".gask-out");
+  let busy = false;
+  const go = async q => {
+    q = q.trim().slice(0, 500); if (!q || busy) return;
+    inp.value = q;
+    const p = AI[aiProv()], ready = state.mode === "demo" || !!aiKey(), gq = (ctx.match(/^Trouble code (\w+)/) || ctx.match(/^Part: ([^.(]+)/) || [])[1] || "";
+    const google = `<a class="btn small" href="${esc(googleUrl((gq ? gq.trim() + " " : "") + q))}" target="_blank" rel="noopener">Search Google</a>`;
+    if (!ready) { out.innerHTML = `<div class="notice">To get answers here, add an AI provider under More → AI answers. It uses your own key.</div><div class="row">${google}</div>`; return; }
+    busy = true; out.innerHTML = `<p class="muted">Asking ${esc(p.name)}…</p>`;
+    try {
+      const a = await aiAsk(`${q}
+
+(Context: the owner is looking at this screen in the app. ${ctx})`);
+      out.innerHTML = `<div class="panel stack gask-answer" style="gap:8px"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div></div><div class="row">${google}</div>`;
+    } catch (e) { out.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
+    busy = false;
+  };
+  box.querySelector(".gask-form").onsubmit = e => { e.preventDefault(); go(inp.value); };
+  box.querySelectorAll("[data-gask]").forEach(b => b.onclick = () => go(b.dataset.gask));
+}
+// In the installed app on Android, a new-tab link opens in a panel over the app that's easy to lose.
+// Hand web links to the full Chrome browser instead, so the owner can switch back to MyVan.
+const standaloneApp = () => { try { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch { return false; } };
+const chromeIntent = url => { const u = new URL(url); return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`; };
+function openExternal(url) { location.href = chromeIntent(url); }
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest('a[target="_blank"]');
+  if (!a || !/^https:/.test(a.href) || !/Android/i.test(navigator.userAgent) || !standaloneApp()) return;
+  e.preventDefault(); window.openExternal(a.href);
+});
+// The last question and answer on Ask about my van stay, so they're still there after switching apps.
+const askKeep = () => { try { const o = $("#askOut"); localStorage.setItem("odxai:last", JSON.stringify({ q: $("#askIn").value, html: o.innerHTML.replace(/<button[^>]*id="askMore"[^>]*>.*?<\/button>/, ""), at: Date.now() })); } catch {} };
+function askRestore() {
+  if ($("#askOut").innerHTML.trim()) return;
+  try { const l = JSON.parse(localStorage.getItem("odxai:last")); if (l && l.html && Date.now() - l.at < 864e5) { $("#askIn").value = l.q || ""; $("#askOut").innerHTML = l.html; const g = $("#askOut [data-go-ai]"); if (g) g.onclick = () => show("more"); } } catch {}
+}
 let askBusy = false;
 function renderAsk() {
+  askRestore();
   $("#askChips").innerHTML = ASK.map(a => `<button class="btn small" type="button" data-ask="${esc(a.q)}">${esc(a.q)}</button>`).join("");
   const p = AI[aiProv()], ready = state.mode === "demo" || aiKey();
   $("#askFoot").innerHTML = `Answers come from your van's data on this device and are guidance, not a guarantee. ${ready ? `If the app can't answer, your question and a summary of your van's data (never the VIN) go to ${esc(p.name)}.` : "For questions the app can't answer, you can add an AI provider under More → AI answers."}`;
@@ -2698,12 +2798,12 @@ async function ask(q) {
   if (b) {
     out.innerHTML = card(b.title, b.lines.map(l => `<p>${esc(l)}</p>`).join(""), "From your van's data") + `<div class="row" style="gap:8px">${ready ? `<button class="btn small" type="button" id="askMore">Ask ${esc(p.name)} for more</button>` : ""}${google}</div>`;
     const more = $("#askMore"); if (more) more.onclick = () => askAi(q, true);
-    return;
+    askKeep(); return;
   }
   if (!ready) {
     out.innerHTML = `<div class="notice">The app doesn't have a built-in answer for that yet. Try one of the questions above, search Google, or add an AI provider under More → AI answers to answer questions like this.</div><div class="row" style="gap:8px">${google}<button class="btn small" type="button" data-go-ai>Set up AI answers</button></div>`;
     out.querySelector("[data-go-ai]").onclick = () => show("more");
-    return;
+    askKeep(); return;
   }
   askAi(q, false);
 }
@@ -2718,7 +2818,7 @@ async function askAi(q, keepBuiltIn) {
     const a = await aiAsk(q);
     slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div>${a.note ? `<p class="muted" style="font-size:.8rem;margin:0" id="aiNote">${esc(a.note)}</p>` : ""}<p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic.</p></div>`;
   } catch (e) { slot.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
-  askBusy = false; $("#askBtn").disabled = false;
+  askBusy = false; $("#askBtn").disabled = false; askKeep();
 }
 function renderAiSet() {
   const box = $("#aiSet"); if (!box) return;

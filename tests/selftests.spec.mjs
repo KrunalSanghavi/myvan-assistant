@@ -26,7 +26,7 @@ test("an all-zero result shows Not run yet; a part's troubleshooting page says n
   await page.locator('.hcard[data-comp="evap"]').click();
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("Not run yet");
-  await expect(sheet).toContainText("no result since the last reset");
+  await expect(sheet).toContainText("no result yet");
   await sheet.getByRole("button", { name: "Close" }).click();
 
   await page.locator('.hcard[data-comp="af2"]').click();
