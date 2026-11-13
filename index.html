@@ -564,9 +564,9 @@ const PARAMS = [
     desc: "Ambient temperature. Useful for judging warm-up time and intake temperature." },
   { pid: 0x5C, key: "oil", name: "Engine oil temperature", kind: "temp", n: 1, f: b => b[0] - 40, enc: v => u8(v + 40), g: [-20, 150], normal: [80, 120], group: "Temperatures",
     desc: "Engine oil temperature." },
-  { pid: 0x3C, key: "cat1", name: "Catalyst temperature, bank 1", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 820], note: "warm, running", group: "Temperatures",
-    desc: "Estimated temperature of the rear-bank catalytic converter. Misfires send it very high." },
-  { pid: 0x3D, key: "cat2", name: "Catalyst temperature, bank 2", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 820], note: "warm, running", group: "Temperatures",
+  { pid: 0x3C, key: "cat1", name: "Catalyst temperature, bank 1", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 950], note: "warm, running", group: "Temperatures",
+    desc: "Estimated temperature of the rear-bank catalytic converter. Up to about 950 °C (1740 °F) is normal when working hard, like climbing a hill. Misfires send it much higher." },
+  { pid: 0x3D, key: "cat2", name: "Catalyst temperature, bank 2", kind: "temp", n: 2, f: b => (b[0] * 256 + b[1]) / 10 - 40, enc: v => u16((v + 40) * 10), g: [0, 1000], normal: [350, 950], note: "warm, running", group: "Temperatures",
     desc: "Estimated temperature of the front-bank catalytic converter." },
   { pid: 0x06, key: "stft1", name: "Short-term fuel trim, bank 1", kind: "trim", n: 1, f: b => (b[0] - 128) * 100 / 128, enc: v => u8(v * 1.28 + 128), g: [-30, 30], normal: [-10, 10], fast: true, group: "Fuel and air",
     desc: "Moment-to-moment fuel correction for the rear bank (cylinders 1–3). Positive means the computer is adding fuel because it sees a lean mixture." },
@@ -1082,7 +1082,7 @@ async function disconnect(msg, quiet) {
   if (elm && state.mode !== "demo") { try { await Promise.race([elm.send("ATLP", 800), sleep(900)]); } catch {} }
   state.conn = null; state.elm = null; state.drive = null; clearOpen = false; clearMsg = ''; renderClearConfirm();
   if (t) { t.onClose = null; try { await t.close(); } catch {} }
-  state.silent = false; for (const k in VT) delete VT[k];
+  state.silent = false; for (const k in VT) delete VT[k]; fuelRaw.length = 0;
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
   connectMsg = msg || ""; if (!quiet) renderConnect(); renderVehicle();
@@ -1223,7 +1223,10 @@ async function clearCodes() {
 }
 
 /* ---------- polling ---------- */
+// Fuel sloshes in the tank, so the level shown and used for alerts is the middle of the last 15 readings (about a minute).
+const fuelRaw = [];
 function pushVal(key, v) {
+  if (key === "fuel") { fuelRaw.push(v); if (fuelRaw.length > 15) fuelRaw.shift(); v = median(fuelRaw); }
   V[key] = v; VT[key] = Date.now();
   (H[key] = H[key] || []).push(v);
   const l = tileLevel(key);
@@ -1303,11 +1306,11 @@ function evalRules() {
     }
   }
   for (const k of ["cat1", "cat2"]) if (V[k] != null) {
-    if (V[k] > 900) push(k, "crit", `Catalytic converter very hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
-    else if (V[k] > 820) push(k, "warn", `Catalytic converter running hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
+    if (V[k] > 1000) push(k, "crit", `Catalytic converter very hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
+    else if (V[k] > 950) push(k, "warn", `Catalytic converter running hot, bank ${k[3]}`, `Estimated at ${fmt(k)}.`, "CATHOT", [k]);
   }
   if (V.oil != null && V.oil > 130) push("oil", "warn", "Oil temperature high", `Oil is at ${fmt("oil")}.`, "OVERHEAT", ["oil"]);
-  if (V.fuel != null && V.fuel < 10) push("fuel", "warn", "Fuel level low", `${fmt("fuel")} in the tank.`, "FUEL", ["fuel"]);
+  if (V.fuel != null && V.fuel < 10 && fuelRaw.length >= 5) push("fuel", "warn", "Fuel level low", `${fmt("fuel")} in the tank.`, "FUEL", ["fuel"]);
   return out;
 }
 /* ---------- spoken alerts (Web Speech API; off by default) ---------- */
@@ -1391,6 +1394,8 @@ function dropStale() {
   const silent = !!state.elm && VT.rpm != null && V.rpm == null;
   if (silent !== !!state.silent) { state.silent = silent; renderConnLabel(); }
 }
+// Samples in a row before an alert shows (about 0.6 s each). Catalyst heat must last about 20 seconds.
+const ALERT_AFTER = { cat1: 32, cat2: 32 };
 function afterSample() {
   dropStale();
   try { trackDrive(); } catch {}
@@ -1399,7 +1404,7 @@ function afterSample() {
   const active = [];
   for (const f of raw) {
     state.counters[f.id] = (state.counters[f.id] || 0) + 1;
-    if (state.counters[f.id] >= 4) {
+    if (state.counters[f.id] >= (ALERT_AFTER[f.id] || 4)) {
       active.push(f);
       const s = state.seen[f.id] || (state.seen[f.id] = { first: new Date() });
       Object.assign(s, f, { last: new Date() });
@@ -1900,7 +1905,8 @@ function closeness(t) {
 }
 const isMisfire = t => t.mid >= 0xA1 && t.mid <= 0xAD && (t.tid === 0x0B || t.tid === 0x0C);
 function testGrade(t) {
-  if (isMisfire(t)) return { grade: t.v >= 5 ? "plan" : t.v >= 1 ? "watch" : "good", margin: null };
+  // A few misfires per drive are normal. Grade on the 10-drive average (0B); one drive (0C) only counts when it's large.
+  if (isMisfire(t)) return { grade: t.tid === 0x0B ? (t.v >= 25 ? "plan" : t.v >= 5 ? "watch" : "good") : t.v >= 25 ? "watch" : "good", margin: null };
   if (notRun(t)) return { grade: "unknown", margin: null, notRun: true };
   // A test the van passed is at most Watch: one reading near the limit isn't a reason to replace a part.
   const c = closeness(t);
@@ -2490,7 +2496,10 @@ function evalComponent(c) {
   for (const t of tests) {
     const g = testGrade(t); grade = worse(grade, g.grade); ev.push({ t, ...g });
     if (g.grade === "good" || g.notRun) continue;
-    if (isMisfire(t)) { if (t.tid === 0x0B && t.mid !== 0xA1) why.push(`Cylinder ${t.mid - 0xA1} is misfiring about ${t.v} time${t.v === 1 ? "" : "s"} per drive on average, not enough to set a code yet.`); }
+    if (isMisfire(t)) {
+      const who = t.mid === 0xA1 ? "The engine" : `Cylinder ${t.mid - 0xA1}`;
+      why.push(t.tid === 0x0B ? `${who} is misfiring about ${t.v} times per drive on average, not enough to set a code yet.` : `${who} misfired ${t.v} times on the last drive. Watch whether it happens again.`);
+    }
     else if (!t.pass) why.push(`${MID_NAME[t.mid]} failed its last self-test: ${fmtTest(t, t.v)}, ${limitText(t)}.`);
     else why.push(`${MID_NAME[t.mid]} passed its self-test, close to Honda's limit (${g.margin}% margin left).`);
   }
@@ -2504,7 +2513,7 @@ function evalComponent(c) {
       const v = ds.map(d => d.mis[cyl - 1]).filter(x => x != null);
       if (v.length < 6) continue;
       const r = median(v.slice(-3)), b = median(v.slice(0, Math.min(5, v.length - 3)));
-      if (r >= 1 && r - b >= 1) { grade = worse(grade, "watch"); why.push(`Cylinder ${cyl} misfire count has been rising over the last ${v.length} drives, from about ${b} to ${r} per drive.`); }
+      if (r >= 5 && r - b >= 3) { grade = worse(grade, "watch"); why.push(`Cylinder ${cyl} misfire count has been rising over the last ${v.length} drives, from about ${b} to ${r} per drive.`); }
     }
   }
   if (c.maint) { const a = maintStatus(c.maint); if (a) { grade = worse(grade, a.grade); if (a.grade !== "good") why.push(a.msg); } }
