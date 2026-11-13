@@ -188,6 +188,7 @@ details.help.recall .prose{padding:0 16px 14px}
 .code{font-family:var(--f-mono);font-weight:600;font-size:.95rem;background:var(--fill);border-radius:8px;padding:5px 8px;white-space:nowrap}
 .empty{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px;color:var(--muted);text-align:center}
 .lookup{display:flex;gap:8px;flex-wrap:wrap}
+.btn.mic{padding:0 12px;min-width:46px}.btn.mic svg{width:20px;height:20px}.btn.mic.on{background:var(--crit);border-color:transparent;color:#fff}
 .lookup input{flex:1;min-width:0;max-width:220px;text-transform:uppercase;font-family:var(--f-mono);border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:0 12px;min-height:44px}
 .confirm{background:var(--crit-bg);border:1px solid var(--crit-line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
 .confirm .btn.danger{background:var(--crit);color:#fff;border-color:transparent}
@@ -380,6 +381,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
   <section class="view" id="view-ask" hidden>
     <form class="lookup" id="askForm"><input id="askIn" aria-label="Your question" placeholder="Ask about your van" autocomplete="off" enterkeyhint="send" style="max-width:none;text-transform:none;font-family:inherit"><button class="btn primary" type="submit" id="askBtn">Ask</button></form>
     <div id="askOut" class="stack" role="status" aria-live="polite"></div>
+    <div class="row" style="gap:12px;justify-content:space-between"><label class="check" style="margin:0"><input type="checkbox" id="askSpeak"> Read answers aloud</label><button class="link" type="button" id="askNew" hidden>New conversation</button></div>
+    <div id="askThread" class="stack" style="gap:8px"></div>
     <div class="row" id="askChips" style="gap:6px"></div>
     <p class="muted" id="askFoot" style="font-size:.82rem"></p>
   </section>
@@ -1244,9 +1247,37 @@ const SPEAK_LABEL = { off: "Off", critical: "Critical only", all: "All alerts" }
 let speakMode = store.get("speak", "off");
 const spoken = {};   // alert id -> { at: last spoken, active }
 const canSpeak = () => typeof window.speechSynthesis === "object" && window.speechSynthesis && typeof window.SpeechSynthesisUtterance === "function";
-function say(text) {
-  if (!canSpeak()) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 1; window.speechSynthesis.speak(u); } catch {}
+// Android loads voices late and can leave the speech queue paused; pick an English voice once they arrive.
+let voicePick = null;
+function pickVoice() { try { const v = window.speechSynthesis.getVoices() || []; return v.find(x => /^en[-_]US/i.test(x.lang) && x.localService) || v.find(x => /^en[-_]US/i.test(x.lang)) || v.find(x => /^en/i.test(x.lang)) || null; } catch { return null; } }
+try { if (canSpeak() && window.speechSynthesis.addEventListener) window.speechSynthesis.addEventListener("voiceschanged", () => { voicePick = pickVoice(); }); } catch {}
+// opt.flush: drop anything still queued (answers and the test). opt.onstart / onend / onerror: callbacks.
+function say(text, opt = {}) {
+  if (!canSpeak()) return null;
+  try {
+    const ss = window.speechSynthesis;
+    if (opt.flush && ss.cancel) ss.cancel();
+    if (ss.paused && ss.resume) ss.resume();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = voicePick || (voicePick = pickVoice());
+    if (v) u.voice = v;
+    u.lang = v ? v.lang : "en-US"; u.rate = 1; u.volume = 1;
+    if (opt.onstart) u.onstart = opt.onstart;
+    if (opt.onend) u.onend = opt.onend;
+    if (opt.onerror) u.onerror = opt.onerror;
+    say.cur = u;   // keep a reference: Chrome can drop the callbacks of an utterance it garbage-collects
+    ss.speak(u);
+    return u;
+  } catch { return null; }
+}
+const voiceTrouble = err => `The phone didn't play the voice${err ? ` (${err})` : ""}. Check that media volume is up: press the volume button while the test plays. Check that a text-to-speech engine is set: Android Settings → search "Text-to-speech" → choose Speech Services by Google and install the English voice. If the phone is on Bluetooth audio, the sound goes to that device.`;
+function testVoice() {
+  const note = $("#speakNote"); let started = false;
+  note.textContent = "Starting the test voice…";
+  say("Warning. Coolant running hot. This is a test.", { flush: true,
+    onstart: () => { started = true; note.textContent = "Playing the test. If you can't hear it, turn up the media volume."; },
+    onerror: e => { started = true; note.textContent = voiceTrouble(e && e.error); } });
+  setTimeout(() => { if (!started) note.textContent = voiceTrouble(); }, 3500);
 }
 // Turn on-screen text into something a voice reads naturally.
 const spokenText = t => String(t)
@@ -2682,15 +2713,19 @@ async function geminiAlt(key, cur) {
   const rest = (list || []).filter(n => n !== cur);
   return rest.find(n => /flash/.test(n) && !/lite|preview|exp|thinking/.test(n)) || rest.find(n => /flash/.test(n)) || rest[0] || null;
 }
-async function aiAsk(q, retried, useModel) {
+// x.hist: earlier turns of this conversation [{ q, a }]. x.signal: lets the owner cancel.
+async function aiAsk(q, retried, useModel, x = {}) {
   const p = aiProv(), P = AI[p], model = useModel || aiModel(p);
   if (state.mode === "demo") { await sleep(400); return { who: P.name + " (demo)", text: `Demo van: this is a sample answer. With your own ${P.name} key, the answer to "${q}" would appear here, written from your van's data.\n\n- It uses only the facts the app has worked out.\n- It never sees your VIN.\n\nThis is guidance, not a guarantee.` }; }
   const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
+  if (x.signal) { if (x.signal.aborted) ctl.abort(); else x.signal.addEventListener("abort", () => ctl.abort()); }
+  const hist = (x.hist || []).slice(-4).map(h => `Owner: ${h.q}\nYou: ${String(h.a).slice(0, 1200)}`).join("\n\n");
   try {
-    const [url, opt] = P.req(aiKey(p), model, AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\nQuestion: ${q}`);
+    const [url, opt] = P.req(aiKey(p), model, AI_SYSTEM, `Facts sheet:\n${aiFacts()}\n\n${hist ? `Earlier in this conversation:\n${hist}\n\n` : ""}Question: ${q}`);
     let r;
     try { r = await fetch(url, { ...opt, signal: ctl.signal }); }
     catch (err) {
+      if (x.signal && x.signal.aborted) throw new Error("Cancelled.");
       if (ctl.signal.aborted) throw new Error(`${P.name} took more than a minute to answer, so the app stopped waiting. Try again, or try a shorter question.`);
       // The browser's own reason helps tell a blocked request from a bad setting.
       const why = String((err && (err.message || err.name)) || "").slice(0, 120);
@@ -2704,7 +2739,7 @@ async function aiAsk(q, retried, useModel) {
       if ([500, 502, 503, 504, 529].includes(r.status) || /high demand|overloaded|unavailable|try again later/i.test(msg)) {
         if (p === "gemini" && !retried) {
           const m2 = await geminiAlt(aiKey(p), model);
-          if (m2) { clearTimeout(tm); const a = await aiAsk(q, true, m2); return { ...a, note: `${model} was busy, so this answer came from ${m2}.` }; }
+          if (m2) { clearTimeout(tm); const a = await aiAsk(q, true, m2, x); return { ...a, note: `${model} was busy, so this answer came from ${m2}.` }; }
         }
         throw new Error(`${P.name} is busy right now (${model}). This is usually over in a few minutes. Try again soon, or search Google below.${detail}`);
       }
@@ -2713,7 +2748,7 @@ async function aiAsk(q, retried, useModel) {
       if (r.status === 404 || /model.*(not found|not supported|does not exist|unknown)|(unknown|invalid) model/i.test(msg)) {
         if (p === "gemini" && !retried) {
           let m2 = null; try { m2 = await geminiPickModel(aiKey(p)); } catch {}
-          if (m2 && m2 !== model) { const c = aiCfg(); c.models = c.models || {}; c.models[p] = m2; aiSave(c); clearTimeout(tm); const a = await aiAsk(q, true); return { ...a, note: `Gemini didn't recognise the old model name, so the app switched to ${m2}.` }; }
+          if (m2 && m2 !== model) { const c = aiCfg(); c.models = c.models || {}; c.models[p] = m2; aiSave(c); clearTimeout(tm); const a = await aiAsk(q, true, null, x); return { ...a, note: `Gemini didn't recognise the old model name, so the app switched to ${m2}.` }; }
         }
         throw new Error(`${P.name} doesn't recognise the model "${model}". Change it under More → AI answers.${detail}`);
       }
@@ -2740,7 +2775,7 @@ const googleUrl = q => "https://www.google.com/search?q=" + encodeURIComponent("
 // "Ask about this" on guide and part sheets: the question goes out with what the owner is looking at.
 function askBoxHtml(chips) {
   return `<div class="group askbox"><span class="label">Ask about this</span>
-    <form class="lookup gask-form"><input class="gask-in" aria-label="Ask about this" placeholder="Type a question" autocomplete="off" enterkeyhint="send" style="max-width:none;text-transform:none;font-family:inherit"><button class="btn primary" type="submit">Ask</button></form>
+    <form class="lookup gask-form"><input class="gask-in" aria-label="Ask about this" placeholder="Type a question" autocomplete="off" enterkeyhint="send" style="max-width:none;text-transform:none;font-family:inherit">${micBtnHtml()}<button class="btn primary" type="submit">Ask</button></form>
     <div class="row" style="gap:6px">${chips.map(q => `<button class="btn small" type="button" data-gask="${esc(q)}">${esc(q)}</button>`).join("")}</div>
     <div class="gask-out stack" style="gap:8px" role="status" aria-live="polite"></div></div>`;
 }
@@ -2748,7 +2783,7 @@ function wireAskBox(root, ctx) {
   const box = root && root.querySelector(".askbox"); if (!box) return;
   const inp = box.querySelector(".gask-in"), out = box.querySelector(".gask-out");
   let busy = false;
-  const go = async q => {
+  const go = async (q, voiced) => {
     q = q.trim().slice(0, 500); if (!q || busy) return;
     inp.value = q;
     const p = AI[aiProv()], ready = state.mode === "demo" || !!aiKey(), gq = (ctx.match(/^Trouble code (\w+)/) || ctx.match(/^Part: ([^.(]+)/) || [])[1] || "";
@@ -2760,11 +2795,13 @@ function wireAskBox(root, ctx) {
 
 (Context: the owner is looking at this screen in the app. ${ctx})`);
       out.innerHTML = `<div class="panel stack gask-answer" style="gap:8px"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div></div><div class="row">${google}</div>`;
+      speakAnswer(a.text, voiced);
     } catch (e) { out.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
     busy = false;
   };
   box.querySelector(".gask-form").onsubmit = e => { e.preventDefault(); go(inp.value); };
   box.querySelectorAll("[data-gask]").forEach(b => b.onclick = () => go(b.dataset.gask));
+  const mic = box.querySelector(".mic"); if (mic) mic.onclick = () => listenInto(inp, mic, t => go(t, true), m => { out.innerHTML = `<div class="notice warn">${esc(m)}</div>`; });
 }
 // In the installed app on Android, a new-tab link opens in a panel over the app that's easy to lose.
 // Hand web links to the full Chrome browser instead, so the owner can switch back to MyVan.
@@ -2777,48 +2814,97 @@ document.addEventListener("click", e => {
   e.preventDefault(); window.openExternal(a.href);
 });
 // The last question and answer on Ask about my van stay, so they're still there after switching apps.
-const askKeep = () => { try { const o = $("#askOut"); localStorage.setItem("odxai:last", JSON.stringify({ q: $("#askIn").value, html: o.innerHTML.replace(/<button[^>]*id="askMore"[^>]*>.*?<\/button>/, ""), at: Date.now() })); } catch {} };
+const askKeep = () => { try { const o = $("#askOut"); localStorage.setItem("odxai:last", JSON.stringify({ q: $("#askIn").value, html: o.innerHTML.replace(/<button[^>]*id="askMore"[^>]*>.*?<\/button>/, "").replace(/<div class="row"[^>]*><p class="muted" id="askWait".*?<\/div>/, ""), hist: askHist.slice(-8), at: Date.now() })); } catch {} };
 function askRestore() {
   if ($("#askOut").innerHTML.trim()) return;
-  try { const l = JSON.parse(localStorage.getItem("odxai:last")); if (l && l.html && Date.now() - l.at < 864e5) { $("#askIn").value = l.q || ""; $("#askOut").innerHTML = l.html; const g = $("#askOut [data-go-ai]"); if (g) g.onclick = () => show("more"); } } catch {}
+  try {
+    const l = JSON.parse(localStorage.getItem("odxai:last"));
+    if (l && l.html && Date.now() - l.at < 864e5) {
+      $("#askIn").value = l.q || ""; $("#askOut").innerHTML = l.html; askHist = Array.isArray(l.hist) ? l.hist : [];
+      const g = $("#askOut [data-go-ai]"); if (g) g.onclick = () => show("more");
+      renderThread();
+    }
+  } catch {}
+}
+// Speech-to-text from the browser (approved #49). On Android Chrome the audio goes to Google only while listening.
+const SRec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+const micBtnHtml = () => SRec ? `<button class="btn mic" type="button" aria-label="Talk instead of typing" aria-pressed="false">${MIC_SVG}</button>` : "";
+let listening = null;
+function listenInto(inp, btn, done, tell) {
+  if (!SRec) return;
+  if (listening) { try { listening.stop(); } catch {} return; }
+  let r; try { r = new SRec(); } catch { return; }
+  listening = r; let final = "";
+  const ph = inp.placeholder;
+  r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1; r.continuous = false;
+  btn.classList.add("on"); btn.setAttribute("aria-pressed", "true"); inp.placeholder = "Listening…"; inp.value = "";
+  try { if (canSpeak()) window.speechSynthesis.cancel(); } catch {}
+  r.onresult = e => { let t = ""; for (let i = 0; i < e.results.length; i++) { t += e.results[i][0].transcript; if (e.results[i].isFinal) final = t; } inp.value = t; };
+  r.onerror = e => { const m = { "not-allowed": "The microphone is blocked. In Chrome, tap the icon left of the address (or the app's Site settings) and allow Microphone.", "service-not-allowed": "The microphone is blocked. In Chrome, tap the icon left of the address (or the app's Site settings) and allow Microphone.", "no-speech": "Didn't hear anything. Tap the mic and try again.", "network": "Speech-to-text needs an internet connection.", "audio-capture": "No microphone was found." }[e && e.error]; if (m && tell) tell(m); };
+  r.onend = () => { listening = null; btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); inp.placeholder = ph; const t = (final || "").trim(); if (t) done(t); };
+  try { r.start(); } catch { listening = null; btn.classList.remove("on"); inp.placeholder = ph; }
+}
+// Answers are read aloud when the question was spoken, or always with "Read answers aloud".
+const plainSpeech = t => String(t).replace(/\*\*/g, "").replace(/^#+\s*/gm, "").replace(/^\s*(?:[-*•]|\d+\.)\s+/gm, "").replace(/\s+/g, " ").trim();
+const speakAnswer = (t, voiced) => { if ((voiced || store.get("askSpeak", false)) && canSpeak()) say(spokenText(plainSpeech(t)).slice(0, 1500), { flush: true }); };
+let askHist = [], askCtl = null;
+function renderThread() {
+  const old = askHist.slice(0, -1).reverse();
+  $("#askThread").innerHTML = old.length ? `<span class="label">Earlier in this conversation</span>` + old.map(h => `<details class="help"><summary>${esc(h.q)}</summary><div class="prose">${mdLite(String(h.a))}</div></details>`).join("") : "";
+  $("#askNew").hidden = !askHist.length;
 }
 let askBusy = false;
 function renderAsk() {
   askRestore();
+  if (SRec && !$("#askForm .mic")) $("#askBtn").insertAdjacentHTML("beforebegin", micBtnHtml());
+  $("#askSpeak").checked = !!store.get("askSpeak", false);
   $("#askChips").innerHTML = ASK.map(a => `<button class="btn small" type="button" data-ask="${esc(a.q)}">${esc(a.q)}</button>`).join("");
   const p = AI[aiProv()], ready = state.mode === "demo" || aiKey();
   $("#askFoot").innerHTML = `Answers come from your van's data on this device and are guidance, not a guarantee. ${ready ? `If the app can't answer, your question and a summary of your van's data (never the VIN) go to ${esc(p.name)}.` : "For questions the app can't answer, you can add an AI provider under More → AI answers."}`;
 }
-async function ask(q) {
-  q = q.trim().slice(0, 500); if (!q || askBusy) return;
+async function ask(q, voiced) {
+  q = q.trim().slice(0, 500); if (!q) return;
+  if (askBusy) { const w = $("#askWait"); if (w) w.textContent = "Still waiting for the last answer. Tap Cancel to ask something else."; return; }
   $("#askIn").value = q;
   const out = $("#askOut"), b = askBuiltIn(q), p = AI[aiProv()], ready = state.mode === "demo" || !!aiKey();
   const google = `<a class="btn small" href="${esc(googleUrl(q))}" target="_blank" rel="noopener">Search Google</a>`;
   const card = (title, body, foot) => `<div class="panel stack" style="gap:8px"><div class="row between"><b>${esc(title)}</b>${foot ? `<span class="muted" style="font-size:.8rem">${esc(foot)}</span>` : ""}</div><div class="prose">${body}</div></div>`;
   if (b) {
+    askHist.push({ q, a: b.title + ". " + b.lines.join(" ") }); renderThread();
     out.innerHTML = card(b.title, b.lines.map(l => `<p>${esc(l)}</p>`).join(""), "From your van's data") + `<div class="row" style="gap:8px">${ready ? `<button class="btn small" type="button" id="askMore">Ask ${esc(p.name)} for more</button>` : ""}${google}</div>`;
-    const more = $("#askMore"); if (more) more.onclick = () => askAi(q, true);
+    const more = $("#askMore"); if (more) more.onclick = () => askAi(q, true, voiced);
+    speakAnswer(b.title + ". " + b.lines.join(" "), voiced);
     askKeep(); return;
   }
   if (!ready) {
-    out.innerHTML = `<div class="notice">The app doesn't have a built-in answer for that yet. Try one of the questions above, search Google, or add an AI provider under More → AI answers to answer questions like this.</div><div class="row" style="gap:8px">${google}<button class="btn small" type="button" data-go-ai>Set up AI answers</button></div>`;
+    out.innerHTML = `<div class="notice">The app doesn't have a built-in answer for that yet. Try one of the questions below, search Google, or add an AI provider under More → AI answers to answer questions like this.</div><div class="row" style="gap:8px">${google}<button class="btn small" type="button" data-go-ai>Set up AI answers</button></div>`;
     out.querySelector("[data-go-ai]").onclick = () => show("more");
     askKeep(); return;
   }
-  askAi(q, false);
+  askAi(q, false, voiced);
 }
-async function askAi(q, keepBuiltIn) {
+async function askAi(q, keepBuiltIn, voiced) {
   const out = $("#askOut"), p = AI[aiProv()], slot = document.createElement("div");
   slot.className = "stack"; slot.style.gap = "10px"; slot.id = "askAi";
   if (keepBuiltIn) { const m = $("#askMore"); if (m) m.remove(); const old = $("#askAi"); if (old) old.remove(); out.appendChild(slot); } else { out.innerHTML = ""; out.appendChild(slot); }
-  askBusy = true; $("#askBtn").disabled = true;
-  slot.innerHTML = `<p class="muted">Asking ${esc(p.name)}…</p>`;
+  const hist = keepBuiltIn ? askHist.slice(0, -1) : askHist.slice();
+  const ctl = new AbortController(), t0 = Date.now();
+  askBusy = true; askCtl = ctl;
+  slot.innerHTML = `<div class="row" style="gap:10px;align-items:center"><p class="muted" id="askWait" style="margin:0">Asking ${esc(p.name)}…</p><button class="btn small" type="button" id="askCancel">Cancel</button></div>`;
+  const tick = setInterval(() => { const w = $("#askWait"); if (w && !/Still waiting/.test(w.textContent)) w.textContent = `Asking ${p.name}… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+  $("#askCancel").onclick = () => ctl.abort();
   const google = `<a class="btn small" href="${esc(googleUrl(q))}" target="_blank" rel="noopener">Search Google</a>`;
   try {
-    const a = await aiAsk(q);
-    slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div>${a.note ? `<p class="muted" style="font-size:.8rem;margin:0" id="aiNote">${esc(a.note)}</p>` : ""}<p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic.</p></div>`;
-  } catch (e) { slot.innerHTML = `<div class="notice warn">${esc(e.message)}</div><div class="row">${google}</div>`; }
-  askBusy = false; $("#askBtn").disabled = false; askKeep();
+    const a = await aiAsk(q, false, null, { hist, signal: ctl.signal });
+    if (keepBuiltIn && askHist.length) askHist[askHist.length - 1].a += "\n\n" + a.text; else askHist.push({ q, a: a.text });
+    slot.innerHTML = `<div class="panel stack" style="gap:8px" id="aiAnswer"><div class="row between"><b>Answer</b><span class="muted" style="font-size:.8rem">From ${esc(a.who)}</span></div><div class="prose">${mdLite(a.text)}</div>${a.note ? `<p class="muted" style="font-size:.8rem;margin:0" id="aiNote">${esc(a.note)}</p>` : ""}<p class="muted" style="font-size:.8rem;margin:0">AI answers can be wrong. Check anything important with a mechanic. Ask a follow-up and it will remember this conversation.</p></div>`;
+    speakAnswer(a.text, voiced);
+  } catch (e) {
+    slot.innerHTML = ctl.signal.aborted && /Cancel/.test(e.message) ? `<p class="muted">Cancelled.</p>` : `<div class="notice warn">${esc(e && e.message || "Something went wrong.")}</div><div class="row">${google}</div>`;
+  } finally {
+    clearInterval(tick); askBusy = false; askCtl = null; renderThread(); askKeep();
+  }
 }
 function renderAiSet() {
   const box = $("#aiSet"); if (!box) return;
@@ -2859,6 +2945,9 @@ $("#aiSet").addEventListener("submit", async e => {
 });
 $("#aiSet").addEventListener("click", e => { if (e.target.id === "aiDel") { const c = aiCfg(); delete (c.keys || {})[aiProv()]; aiSave(c); renderAiSet(); $("#aiMsg").textContent = "Key removed from this device."; } });
 $("#askForm").onsubmit = e => { e.preventDefault(); ask($("#askIn").value); };
+$("#askForm").addEventListener("click", e => { const m = e.target.closest(".mic"); if (m) listenInto($("#askIn"), m, t => ask(t, true), msg => { $("#askOut").innerHTML = `<div class="notice warn">${esc(msg)}</div>`; }); });
+$("#askSpeak").onchange = e => { store.set("askSpeak", e.target.checked); if (!e.target.checked && canSpeak()) try { window.speechSynthesis.cancel(); } catch {} };
+$("#askNew").onclick = () => { askHist = []; $("#askOut").innerHTML = ""; $("#askIn").value = ""; renderThread(); try { localStorage.removeItem("odxai:last"); } catch {} $("#askIn").focus(); };
 $("#askChips").onclick = e => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask); };
 
 /* ---------- cloud sync (the owner's own Google Drive; nothing is sent until they sign in) ---------- */
@@ -3137,7 +3226,7 @@ function show(v, fromHistory) {
   window.scrollTo(0, 0);
 }
 $("#spOff").onclick = () => setSpeak("off"); $("#spCrit").onclick = () => setSpeak("critical"); $("#spAll").onclick = () => setSpeak("all");
-$("#speakTest").onclick = () => say("Warning. Coolant running hot. This is a test.");
+$("#speakTest").onclick = testVoice;
 renderSpeak();
 $("#backBtn").onclick = () => { if (history.state && history.state.d > 0) history.back(); else show(parentView); };
 history.replaceState({ v: "live", d: 0, sheet: 0 }, "");
