@@ -16,6 +16,6 @@ Every pull request, every push to `main`, and a weekly run (`.github/workflows/s
 | Dependencies | `npm audit`, Dependabot | Dev tooling (the app itself has no runtime dependencies) and pinned Actions |
 | Secrets | gitleaks | Full git history |
 | DAST | OWASP ZAP baseline (passive) | The app served from the commit, plus the live site weekly |
-| Hardening | `npm run check` | A Content Security Policy that only allows the approved origins. The inline script is allowed by its hash, there are no external scripts, and `eval` isn't used |
+| Hardening | `npm run check`, `tests/security.spec.mjs` | A Content Security Policy that only allows the approved origins. The inline script is allowed by its hash, there are no external scripts, `eval` isn't used, and fonts are served with the app (no Google Fonts call). All GitHub Actions are pinned to commit hashes |
 
 Accepted ZAP findings and the reason for each are in `.zap/rules.tsv`. GitHub Pages doesn't let us set response headers, so header-only protections are covered by the `<meta>` policy where browsers allow it.

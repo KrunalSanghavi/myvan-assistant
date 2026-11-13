@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Orx2q/iUhGNMi3Pd/yAIqFncMT9TFhJ/DmCGeu4KrfA='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Orx2q/iUhGNMi3Pd/yAIqFncMT9TFhJ/DmCGeu4KrfA='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -11,9 +11,11 @@
 <meta name="theme-color" content="#0E1113" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="preload" href="fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+/* Fonts are served with the app (SIL Open Font License, see fonts/OFL.txt), so there's no call to Google Fonts. */
+@font-face{font-family:"Inter";font-style:normal;font-weight:400 700;font-display:swap;src:url(fonts/inter-latin.woff2) format("woff2")}
+@font-face{font-family:"Space Grotesk";font-style:normal;font-weight:500 700;font-display:swap;src:url(fonts/space-grotesk-latin.woff2) format("woff2")}
 /* Instrument-panel look: flat bordered cards on a quiet ground, big Space Grotesk numbers, cyan / amber / orange-red status.
    Light by default, dark when the phone is in dark mode (Auto) or when forced from More > Appearance. */
 :root{

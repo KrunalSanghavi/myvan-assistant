@@ -12,7 +12,7 @@ export const CONNECT = [
 
 // Browsers hash the script after turning CRLF into LF, so do the same (Windows checkouts use CRLF).
 export const scriptHash = html => {
-  const m = html.match(/<script>([\s\S]*?)<\/script>/);
+  const m = html.match(/<script>([\s\S]*?)<\/script>/i);
   if (!m) return null;
   return "sha256-" + createHash("sha256").update(m[1].replace(/\r\n?/g, "\n"), "utf8").digest("base64");
 };
@@ -20,8 +20,8 @@ export const scriptHash = html => {
 export const policy = hash => [
   "default-src 'self'",
   `script-src '${hash}'`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src https://fonts.gstatic.com",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
   "img-src 'self' data: blob:",
   `connect-src 'self' ${CONNECT.join(" ")}`,
   "manifest-src 'self'",

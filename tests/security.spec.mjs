@@ -15,3 +15,13 @@ test("CSP blocks injected inline scripts and unapproved network calls", async ({
   expect(ran).toEqual({ injected: false, fetched: false });
   expect(violations.length).toBeGreaterThanOrEqual(2);
 });
+
+test("fonts come from the app itself, not Google Fonts", async ({ page }) => {
+  const external = [];
+  page.on("request", r => { if (!r.url().startsWith("http://localhost") && !r.url().startsWith("http://127.0.0.1")) external.push(r.url()); });
+  await page.goto("index.html");
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => [document.fonts.check('600 16px "Inter"'), document.fonts.check('700 16px "Space Grotesk"')])).toEqual([true, true]);
+  expect(await page.evaluate(() => [...document.fonts].filter(f => f.status === "loaded").map(f => f.family.replace(/"/g, "")).sort())).toEqual(expect.arrayContaining(["Inter", "Space Grotesk"]));
+  expect(external.filter(u => /fonts\.(googleapis|gstatic)/.test(u))).toEqual([]);
+});

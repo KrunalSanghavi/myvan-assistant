@@ -6,7 +6,7 @@ const html = readFileSync("index.html", "utf8");
 const sw = readFileSync("sw.js", "utf8");
 const fail = [];
 
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(m => m[1]);
 if (!scripts.length) fail.push("No inline <script> found in index.html");
 for (const s of scripts) { try { new Function(s); } catch (e) { fail.push("index.html script does not parse: " + e.message); } }
 
