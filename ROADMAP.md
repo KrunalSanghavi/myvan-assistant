@@ -3,8 +3,8 @@
 Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v3`). Issues labelled `agent-ready` can be built and verified against the demo van; `needs-van` items need the real vehicle. Tick an item here when its issue closes.
 
 ## Now: prove it on the real van (v2.1)
-- [ ] First real drive with the adapter: confirm every live reading, the mode 06 self-tests and the misfire counters match what the van reports. ([#1](https://github.com/KrunalSanghavi/myvan-assistant/issues/1))
-- [ ] Calibrate thresholds from your own baseline. After two weeks of drives, use your van's normal values instead of generic ones. ([#2](https://github.com/KrunalSanghavi/myvan-assistant/issues/2))
+- [ ] First real drive with the adapter: confirm every live reading, the mode 06 self-tests and the misfire counters match what the van reports. First drives done and fixes shipped (#60, #61); waiting on a recheck. ([#1](https://github.com/KrunalSanghavi/myvan-assistant/issues/1))
+- [ ] Calibrate thresholds from your own baseline. After two weeks of drives, use your van's normal values instead of generic ones. Built in v2.13; tuning waits on real drives. ([#2](https://github.com/KrunalSanghavi/myvan-assistant/issues/2))
 - [x] Odometer from the van, where supported (PID A6), so part ages update automatically. ([#3](https://github.com/KrunalSanghavi/myvan-assistant/issues/3))
 - [x] Backup and restore of drive history, notes and maintenance to a file. ([#4](https://github.com/KrunalSanghavi/myvan-assistant/issues/4))
 
@@ -21,8 +21,8 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [x] "Ask about my van": plain-English questions answered from your data using an AI model. ([#12](https://github.com/KrunalSanghavi/myvan-assistant/issues/12))
 
 ## Later: deeper coverage (v3)
-- [ ] Honda-specific data where the adapter allows it: transmission fluid temperature, cylinder deactivation (VCM) status, knock retard per cylinder. ([#13](https://github.com/KrunalSanghavi/myvan-assistant/issues/13))
-- [ ] Transmission computer codes beyond the emissions set. ([#14](https://github.com/KrunalSanghavi/myvan-assistant/issues/14))
+- [ ] Honda-specific data where the adapter allows it: transmission fluid temperature, cylinder deactivation (VCM) status, knock retard per cylinder. Data finder v2 can scan for it (v2.13); waiting on a van run. ([#13](https://github.com/KrunalSanghavi/myvan-assistant/issues/13))
+- [ ] Transmission computer codes beyond the emissions set. Data finder v2 reads codes from every module (v2.13); waiting on a van run. ([#14](https://github.com/KrunalSanghavi/myvan-assistant/issues/14))
 - [x] Vehicle profiles, so the same app correctly monitors other cars in the family. ([#15](https://github.com/KrunalSanghavi/myvan-assistant/issues/15))
 - [ ] An always-on logger in the van, for example a Raspberry Pi that records every drive and syncs over Wi-Fi at home, with no phone needed. ([#16](https://github.com/KrunalSanghavi/myvan-assistant/issues/16))
 - [x] Optional cloud sync, so phone and laptop share one history. ([#17](https://github.com/KrunalSanghavi/myvan-assistant/issues/17))

@@ -12,6 +12,9 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
   - the engine computer's own self-test results (OBD-II mode 06), measured against Honda's pass/fail limits
   - trends across your recorded drives: fuel trims, warm-up time, battery and cranking voltage, airflow, idle steadiness, downstream O2 activity and misfire counts per cylinder
   - the part ages you enter
+
+  After about 13 drives over 2 weeks, each trend also learns **your van's own normal** and flags a reading that drifts outside it, even when the general limits wouldn't. The general limits always still apply, and each part's details say which one it's using.
+- **Outlook for the next year:** Health estimates when a part that's drifting will reach its problem level, with a range ("about 3 to 4 weeks, around Dec 2026"). It draws a straight line through your own drives, needs at least 8 drives over 10 days, and ignores readings that only wobble. Maintenance items get a due date from your usual daily driving. It's a rough guide, not a guarantee.
 - **Trip and fuel economy:** distance, fuel used, mpg, idle time and cost for the drive in progress, estimated from the airflow sensor. Set your fuel price once and each saved trip records what it cost.
 - **Drive history:** Health → History across drives charts any saved per-drive number (fuel economy, trip cost, fuel trims, idle airflow, warm-up time, battery and charging voltages and more) over 2 weeks, 30 days, 90 days or all time, with the warning level marked.
 - **Health report to share:** Health → Health report builds a summary for a mechanic or a buyer (codes, readiness monitors, the report card, parts age and service history). Print it or save it as a PDF, email it (the report goes in the message), or share it as a file. The VIN and service notes are optional.
@@ -20,6 +23,8 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
 - **Codes:** stored, pending and permanent codes, the freeze frame for the stored code, and step-by-step troubleshooting guides for about 60 common codes. Codes can only be cleared with the engine off and the ignition ON; the app walks you through it and checks engine speed first.
 - **Ask about my van:** type a question or tap a suggestion ("Is my battery OK?", "When is my next oil change?", "What does P0420 mean?"). Common questions are answered by the app from your own data, offline and free. For anything else, an AI provider you choose under More → AI answers (Gemini's free tier by default, or Claude, ChatGPT or Grok with your own key) answers from a summary of your van's data that never includes the VIN. Search Google is always one tap away.
 - **Cloud sync:** More → Cloud sync keeps drive history, maintenance, the service log and code notes the same on your phone and laptop through your own Google Drive. The copy goes into a hidden app folder, and an optional passphrase scrambles it before it leaves the device. Display settings stay per device. Restore from a file can also merge instead of replacing.
+- **Vehicle profiles:** one profile per car, picked by VIN, so the app can monitor other cars in the family with the right engine settings. An unknown VIN asks before a new profile is added.
+- **Honda data finder (read-only, experimental):** More → Honda data finder asks the van's other modules for data that standard OBD-II doesn't include. Pick what to look for: the odometer, an instrument panel deep scan, engine and transmission data, or trouble codes from every module (transmission, stability control, airbags and others). It only sends read requests and can't change, reset or clear anything. Run it parked with the engine idling. You can close the panel while it runs: the screen stays on, you'll hear when it's done, and the results are kept so you can save the file afterwards.
 - **More:** connection, VIN, odometer, readiness monitors, alerts this session, the session log (CSV export), backup and restore, cloud sync, AI answers, units, appearance and help.
 - **Demo van:** a simulated Odyssey for trying every screen without the car.
 
@@ -74,7 +79,7 @@ npm run serve   # http://localhost:8080
 
 ## Limits
 
-- Standard OBD-II only. ABS/VSA, airbags, body modules, TPMS, Honda Sensing and detailed transmission data need Honda's i-HDS or an enhanced scanner.
+- Live data and grades use standard OBD-II. The Honda data finder can read trouble codes from other modules, but Honda-only live data (ABS/VSA, airbags, body, TPMS, Honda Sensing, detailed transmission data) still needs Honda's i-HDS or an enhanced scanner until the finder confirms where it lives on this van.
 - Troubleshooting steps are general guidance, not Honda's service procedures. Exact specs and pinpoint tests are at [techinfo.honda.com](https://techinfo.honda.com).
 - Health grades are estimates to help you plan, not guarantees.
 - Live data and codes work on other gasoline cars sold in the US from 1996 on, but the normal ranges and guides are tuned for this van.
