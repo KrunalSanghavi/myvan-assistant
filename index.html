@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-ducCA1EVYpXZZeSDWg3MZMfmipN0EMdU5uMnBPbQIWQ='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-xdRkCDlwbBIDHVCEFemlYpzzCDMpMNmjT1mmauGoKIM='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -2551,7 +2551,8 @@ function forecastTrend(cfg) {
   if (up ? fit >= lim : fit <= lim) return { status: "past", n };
   const toLim = sl2 => sl2 && Math.sign(sl2) === Math.sign(m) ? (lim - fit) / sl2 : Infinity;
   const days = toLim(m), lo = toLim(quant(sl, up ? .75 : .25)), hi = toLim(quant(sl, up ? .25 : .75));
-  return days > OUT_MAX ? { status: "steady", n } : { status: "heading", n, days, lo: Math.min(lo, days), hi: Math.max(hi, days) };
+  // The middle half of the slopes must agree on the direction, or it's just noise.
+  return days > OUT_MAX || hi === Infinity ? { status: "steady", n } : { status: "heading", n, days, lo: Math.min(lo, days), hi: Math.max(hi, days) };
 }
 // This van's usual driving, from the last 90 days of recorded drives.
 function kmPerDay() {
