@@ -26,6 +26,7 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - `npm test` runs static checks plus Playwright on phone (390px) and laptop (1280px) viewports. Locally it uses installed Chrome; CI uses Playwright Chromium.
 - Every enhancement adds at least one test in `tests/` exercising it through the demo van.
 - Tests fail on any console error or uncaught exception.
+- `tests/a11y.spec.mjs` runs axe-core (WCAG 2.1 A/AA) on every main screen in light and dark mode. New screens or sheets should be added there.
 
 ## Workflow (see `.claude/skills/`)
 - Backlog = GitHub issues, milestones `v2.1`, `v2.x`, `v3`. Labels: `agent-ready` (demo van is enough), `needs-van` (needs real hardware: don't mark done without the owner), `status:in-progress`.
