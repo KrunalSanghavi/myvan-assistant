@@ -1,5 +1,5 @@
 // MyVan Assistant offline cache. Bump VERSION when you upload a new index.html.
-const VERSION = "myvan-assistant-v2.11";
+const VERSION = "myvan-assistant-v2.12";
 const CORE = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./fonts/inter-latin.woff2", "./fonts/space-grotesk-latin.woff2"];
 
 self.addEventListener("install", e => {
