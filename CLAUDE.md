@@ -5,6 +5,7 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 ## Layout
 - `index.html`: the whole app in one file: CSS, markup, then one `<script>`. No build step, no framework, no runtime dependencies.
   Script sections, in order (search for `/* ---------- `): helpers and `store`, `PARAMS` (PID table), guides `G`, ELM327 driver, **demo van emulator** (`demo`), real transports, connection flow, polling, alert rules, rendering, sheets, log/CSV, mode 06 self-tests, drive history, maintenance (`MAINT`), component report card (`COMPONENTS`, `TR`), tabs and wiring.
+- Security (#64): `index.html` has a Content-Security-Policy `<meta>` with the inline script's SHA-256 hash. **After editing the script, run `npm run csp`**, or `npm run check` fails. A new approved origin goes in `CONNECT` in `scripts/csp.mjs`. No external scripts, no `eval`. CI `security.yml` runs CodeQL, npm audit, gitleaks and a ZAP baseline. Accepted ZAP findings go in `.zap/rules.tsv` with a reason.
 - `sw.js`: offline cache. `VERSION` must match `APP_VERSION` in index.html.
 - `tests/`: Playwright smoke tests that drive the demo van. `scripts/check.mjs`: static checks (script parses, versions match, no old branding).
 - `ROADMAP.md`: each item links to its GitHub issue.

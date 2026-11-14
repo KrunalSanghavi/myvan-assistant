@@ -2,21 +2,19 @@ import { test, expect, connectDemo } from "./fixtures.mjs";
 
 // #61: a normal drive on the real van set off catalyst, fuel and misfire warnings it shouldn't have.
 const ids = page => page.evaluate(() => state.findings.map(f => f.id));
-const patchVals = (page, extra) => page.evaluate(src => {
+const patchVals = (page, extra) => page.evaluate(x => {
   const base = demo._vals || (demo._vals = demo.vals);
-  const fn = new Function("v", "n", src);
-  let n = 0;
-  demo.vals = function () { const v = base.call(this); Object.assign(v, fn(v, n++)); return v; };
+  demo.vals = function () { return Object.assign(base.call(this), x); };
 }, extra);
 
 test("catalyst at 925° on a hill is normal; over 1000° for a while is critical", async ({ page }) => {
   test.setTimeout(120000);
   await connectDemo(page);
-  await patchVals(page, "return { cat1: 925, cat2: 930 };");
+  await patchVals(page, { cat1: 925, cat2: 930 });
   await expect.poll(() => page.evaluate(() => V.cat1), { timeout: 10000 }).toBeGreaterThan(920);
   await page.waitForTimeout(8000);
   expect((await ids(page)).filter(i => i.startsWith("cat"))).toEqual([]);
-  await patchVals(page, "return { cat1: 1020 };");
+  await patchVals(page, { cat1: 1020 });
   await expect.poll(async () => (await ids(page)).includes("cat1"), { timeout: 45000 }).toBe(true);
   expect(await page.evaluate(() => state.findings.find(f => f.id === "cat1").level)).toBe("crit");
 });
