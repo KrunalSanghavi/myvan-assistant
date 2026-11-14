@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-tHQM2Eqo+54Vjam029Q6Q7dgpiVEjEmcSNSNz+UPUfk='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-aHJ9TsvJtwaqhxA5OMLYYueznj5Izx00yY9DeDkQqmA='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -2535,6 +2535,64 @@ function evalComponent(c) {
   const hint = tests.length && tests.every(notRun) ? "Its self-tests haven't run yet since the last reset. They run during normal driving." : state.m06 && c.mids && !c.trends ? "This van didn't report a self-test for this part." : c.trends ? "Needs a few recorded drives." : "Run a self-test check while connected.";
   return { grade, why: [...new Set(why)], ev, trends, hint };
 }
+/* Part-life outlook (#18): a robust straight line (Theil-Sen) through this van's own drives, projected to the report card's problem level. */
+const OUT_MIN = 8, OUT_DAYS = 10, OUT_MAX = 5 * 365, OUT_SHOW = 365;
+const quant = (a, p) => { const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, f = Math.floor(i); return s[f] + (s[Math.ceil(i)] - s[f]) * (i - f); };
+function forecastTrend(cfg) {
+  const s = series(cfg.key).slice(-60), n = s.length;
+  if (n < OUT_MIN || (s[n - 1].t - s[0].t) / 864e5 < OUT_DAYS) return { status: "few", n };
+  const t0 = s[0].t, x = s.map(p => (p.t - t0) / 864e5), y = s.map(p => cfg.abs ? Math.abs(p.v) : p.v), sl = [];
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (x[j] - x[i] > .01) sl.push((y[j] - y[i]) / (x[j] - x[i]));
+  const m = median(sl);
+  if (!m) return { status: "steady", n };
+  const up = m > 0, lim = up ? cfg.hi && cfg.hi[1] : cfg.lo && cfg.lo[1];
+  if (lim == null || sl.filter(v => Math.sign(v) === Math.sign(m)).length / sl.length < .7) return { status: "steady", n };
+  const fit = median(y.map((v, i) => v - m * x[i])) + m * (Date.now() - t0) / 864e5;
+  if (up ? fit >= lim : fit <= lim) return { status: "past", n };
+  const toLim = sl2 => sl2 && Math.sign(sl2) === Math.sign(m) ? (lim - fit) / sl2 : Infinity;
+  const days = toLim(m), lo = toLim(quant(sl, up ? .75 : .25)), hi = toLim(quant(sl, up ? .25 : .75));
+  return days > OUT_MAX ? { status: "steady", n } : { status: "heading", n, days, lo: Math.min(lo, days), hi: Math.max(hi, days) };
+}
+// This van's usual driving, from the last 90 days of recorded drives.
+function kmPerDay() {
+  const now = Date.now(), ds = drives().filter(d => d.km != null && now - d.t < 90 * 864e5);
+  const span = ds.length ? (now - ds[0].t) / 864e5 : 0;
+  return ds.length >= 5 && span >= 7 ? ds.reduce((a, d) => a + d.km, 0) / span : null;
+}
+function forecastMaint(id) {
+  const it = MAINT.find(x => x.id === id), m = maintData(), d = m.items[id] || {}, st = maintStatus(id);
+  if (!st || st.frac >= 1) return null;
+  const mi = num0(d.mi ?? it.mi), yr = num0(d.yr ?? it.yr), lastMi = num0(d.lastMi), odo = num0(m.odo), kpd = kmPerDay();
+  const byMi = mi && lastMi != null && odo != null && kpd ? (lastMi + mi - odo) / (kpd / KM_PER_MI) : null;
+  const byYr = yr && d.lastDate ? (new Date(d.lastDate).getTime() + yr * 3.156e10 - Date.now()) / 864e5 : null;
+  if (byMi == null && byYr == null) return null;
+  const days = Math.max(0, Math.min(byMi ?? Infinity, byYr ?? Infinity));
+  return { days, lo: days, hi: days, text: `${it.name} will be due in ${spanText(days, days)} (around ${monthOf(days)})${byMi != null && byMi <= (byYr ?? Infinity) ? `, at your usual ${tripDist(kpd)} a day` : ""}.` };
+}
+const daysText = d => d < 14 ? `${Math.max(1, Math.round(d))} day${Math.round(d) > 1 ? "s" : ""}` : d < 61 ? `${Math.round(d / 7)} weeks` : d < 730 ? `${Math.round(d / 30.44)} months` : `${Math.round(d / 365.25)} years`;
+const spanText = (lo, hi) => { const a = daysText(lo); return hi > OUT_MAX ? `about ${a} or longer` : daysText(hi) === a ? `about ${a}` : `about ${a} to ${daysText(hi)}`; };
+const monthOf = d => new Date(Date.now() + d * 864e5).toLocaleDateString([], { month: "short", year: "numeric" });
+const trendOutText = (cfg, f) => f.status === "heading" ? `${cfg.label} is drifting toward the problem level. At this rate it gets there in ${spanText(f.lo, f.hi)} (around ${monthOf(f.days)}).`
+  : f.status === "steady" ? `${cfg.label} is steady, with no sign it's heading toward a problem.` : f.status === "few" ? `${cfg.label}: needs at least ${OUT_MIN} drives over ${OUT_DAYS} days to estimate (${f.n} so far).` : "";
+// Soonest forecast for each part on the report card, plus maintenance items that no report-card part covers.
+function outlook() {
+  const rows = [];
+  for (const c of COMPONENTS) {
+    const fs = (c.trends || []).map(k => ({ cfg: TR[k], f: forecastTrend(TR[k]) })).filter(x => x.f.status === "heading").map(x => ({ days: x.f.days, lo: x.f.lo, hi: x.f.hi, text: trendOutText(x.cfg, x.f) }));
+    const mf = c.maint && forecastMaint(c.maint); if (mf) fs.push(mf);
+    if (fs.length) rows.push({ c, ...fs.sort((a, b) => a.days - b.days)[0] });
+  }
+  const linked = new Set(COMPONENTS.map(c => c.maint).filter(Boolean));
+  for (const it of MAINT) if (!linked.has(it.id)) { const mf = forecastMaint(it.id); if (mf) rows.push({ c: { name: it.name }, ...mf }); }
+  return rows.filter(r => r.days <= OUT_SHOW).sort((a, b) => a.days - b.days);
+}
+const OUT_NOTE = "Estimates draw a straight line through this van's own drives. Driving, weather and repairs change them, so treat them as a rough guide, not a guarantee.";
+function outlookHtml() {
+  const rows = outlook(), enough = COMPONENTS.some(c => (c.trends || []).some(k => forecastTrend(TR[k]).status !== "few"));
+  const body = rows.length ? `<div class="list" id="outList">${rows.map(r => `<div class="item"><div class="body"><div class="row" style="gap:8px"><b>${esc(r.c.name)}</b>${r.c.sub ? `<span class="muted" style="font-size:.84rem">${esc(r.c.sub)}</span>` : ""}<span class="chip ${r.days < 61 ? "warn" : "na"}">${esc(daysText(r.days))}</span></div><p class="muted" style="font-size:.9rem">${esc(r.text)}</p></div>${r.c.id ? `<button class="btn small" data-comp="${r.c.id}">Details</button>` : ""}</div>`).join("")}</div>`
+    : `<p class="muted" id="outEmpty" style="font-size:.9rem">${enough ? "Nothing is heading toward a problem in the next year, based on the drives so far." : `Needs at least ${OUT_MIN} recorded drives over ${OUT_DAYS} days or more to estimate part life.`}</p>`;
+  return `<div class="group" id="outlook"><span class="label">Outlook for the next year</span>${body}<p class="muted" style="font-size:.82rem">${esc(OUT_NOTE)}</p></div>`;
+}
 function healthSummary() {
   const g = COMPONENTS.map(c => evalComponent(c).grade);
   const bad = g.filter(x => GR[x].r >= 3).length, watch = g.filter(x => x === "watch").length, known = g.filter(x => x !== "unknown").length;
@@ -2561,6 +2619,7 @@ function renderHealth() {
   out.innerHTML = `
     <div class="hero ${lvl}"><span class="hero-ico">${lvl ? ICO_WARN : ICO_OK}</span><div class="t"><h3>${head}</h3><p>${esc(sub)}</p></div><button class="btn small" id="m06Btn">${state.elm ? "Check self-tests" : "Connect"}</button></div>
     ${insights.length ? `<div class="group"><span class="label">What I'm seeing</span><div class="list">${insights.map(x => `<div class="item insight"><div class="body"><div class="row" style="gap:8px"><b>${esc(x.c.name)}</b><span class="muted" style="font-size:.84rem">${esc(x.c.sub || "")}</span><span class="chip ${GR[x.e.grade].c}">${esc(gradeText(x.c, x.e.grade))}</span></div>${x.e.why.slice(0, 2).map(w => `<p class="muted" style="font-size:.9rem">${esc(w)}</p>`).join("")}</div><button class="btn small" data-comp="${x.c.id}">Details</button></div>`).join("")}</div></div>` : ""}
+    ${outlookHtml()}
     <div class="group"><span class="label">Report card</span><div class="hgrid">${evs.map(({ c, e }) => healthCard(c, e)).join("")}</div></div>`;
   out.querySelectorAll("[data-comp]").forEach(b => b.onclick = () => openComponent(b.dataset.comp));
   $("#m06Btn").onclick = async () => {
@@ -2669,10 +2728,12 @@ function openComponent(id) {
   const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list" id="testList">${testListHtml(e.ev)}</div>${e.ev.some(x => x.margin != null && !x.notRun) ? `<p class="muted" style="font-size:.84rem">The van decides pass or fail on each test. The bar shows how far the reading is from Honda's limit: a fuller bar means more room to spare. A passing test is never a reason on its own to replace a part.</p>` : ""}</div>` : "";
   const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div></div>`).join("");
   const ms = c.maint ? maintStatus(c.maint) : null;
+  const outs = [...(c.trends || []).map(k => trendOutText(TR[k], forecastTrend(TR[k]))), c.maint && forecastMaint(c.maint) ? forecastMaint(c.maint).text : ""].filter(Boolean);
   openSheet(`<header><div class="t"><span class="label">${esc(c.sub || "")}</span><h2>${esc(c.name)}</h2><div class="row" style="gap:6px"><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></div></div><button class="close" aria-label="Close">×</button></header>
     <div class="block prose"><p><b>${esc(rec)}</b></p>${e.why.map(w => `<p>${esc(w)}</p>`).join("")}${c.life ? `<p class="muted">${esc(c.life)}</p>` : ""}</div>
     ${tests}
     ${trends ? `<div class="group"><span class="label">Trend across drives</span>${trends}</div>` : ""}
+    ${outs.length ? `<div class="group" id="compOutlook"><span class="label">Outlook</span><div class="block">${outs.map(t => `<p style="font-size:.92rem">${esc(t)}</p>`).join("")}<p class="muted" style="font-size:.82rem">${esc(OUT_NOTE)}</p></div></div>` : ""}
     ${c.maint ? `<div class="group"><span class="label">Part age</span><div class="block"><p style="font-size:.92rem">${ms ? esc(ms.msg) : "Add when this was last replaced under Parts age and maintenance on the Health screen."}</p></div></div>` : ""}
     ${askBoxHtml([`Should I worry about the ${c.name.toLowerCase()}?`, "What do these test results mean?", "What should I check first?"])}
     ${c.guide ? `<button class="btn primary" id="compGuide">Open troubleshooting steps</button>` : ""}`);
@@ -2920,6 +2981,8 @@ function reportModel(o) {
   const rc = recallCache();
   if (rc && (!reportVin() || rc.vin === reportVin())) S.push({ h: "Recalls", rows: [...openList(rc), ...closedList(rc)].map(r => ({ k: r.id, v: titleCase(r.component.split(":").pop() || "Recall"), tag: isClosed(rc, r) ? { t: "Closed", c: "ok" } : { t: "Open", c: "warn" }, sub: recallDate(r) + (!isClosed(rc, r) && (r.parkIt || r.parkOutSide) ? " · Park outside or don't drive until repaired" : "") })), empty: "No recalls listed.",
     note: `All NHTSA recalls for the ${vehicleName(rc)}, checked ${new Date(rc.at).toLocaleDateString([], { dateStyle: "medium" })}: ${openList(rc).length} open, ${rc.items.length - openList(rc).length} marked closed by the owner. Whether each one has been repaired on this van can be checked by VIN at nhtsa.gov/recalls.` });
+  const ol = outlook();
+  if (ol.length) S.push({ h: "Outlook for the next year", rows: ol.map(r => ({ k: r.c.name + (r.c.sub ? ", " + r.c.sub : ""), v: "About " + daysText(r.days), sub: r.text })), note: OUT_NOTE });
   const parts = MAINT.map(it => ({ it, st: maintStatus(it.id), d: md.items[it.id] || {} })).filter(x => x.st || x.d.lastDate || x.d.lastMi);
   if (parts.length) S.push({ h: "Parts age", rows: parts.map(({ it, st, d }) => ({ k: it.name, v: [d.lastDate ? "Last done " + new Date(d.lastDate + "T12:00").toLocaleDateString([], { dateStyle: "medium" }) : "", num0(d.lastMi) != null ? "at " + (+d.lastMi).toLocaleString() + " mi" : ""].filter(Boolean).join(" ") || "—", tag: st ? { t: st.grade === "plan" ? "Due" : st.grade === "watch" ? "Due soon" : "OK", c: GR[st.grade].c } : null })) });
   const svc = services().sort(byNewest);
