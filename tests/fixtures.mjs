@@ -33,7 +33,7 @@ export const readStorage = page => page.evaluate(() => Object.fromEntries(Object
 // A fake USB (Web Serial) ELM327 adapter that answers through the app's demo emulator,
 // so the real-adapter code path (where data is saved) can be tested without hardware.
 // Pass { without: [0xA6] } to make the "van" not support some PIDs, { add: [0x67] } to add some, { setup } to run a function in the page first.
-export async function connectFakeUsb(page, { without = [], add = [], setup } = {}) {
+export async function connectFakeUsb(page, { without = [], add = [], setup, setupArg } = {}) {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "serial", { configurable: true, value: { requestPort: async () => {
       let ctrl; const enc = new TextEncoder(), dec = new TextDecoder();
@@ -47,7 +47,7 @@ export async function connectFakeUsb(page, { without = [], add = [], setup } = {
   });
   await page.goto("index.html");
   await page.evaluate(([w, a]) => { w.forEach(p => demo.sup.delete(p)); a.forEach(p => demo.sup.add(p)); }, [without, add]);
-  if (setup) await page.evaluate(setup);
+  if (setup) await page.evaluate(setup, setupArg);
   await page.getByRole("button", { name: /USB adapter/ }).click();
   await expect(page.locator("#connText")).toHaveText("Connected · USB adapter", { timeout: 15000 });
 }

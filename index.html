@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-469+6crV9l7z/HmJqZxwErklLGGdaGtylC/h5PqFwys='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-tHQM2Eqo+54Vjam029Q6Q7dgpiVEjEmcSNSNz+UPUfk='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -338,6 +338,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
   <section class="view" id="view-live">
     <div id="connectBox"></div>
     <div id="liveBox" class="stack" hidden>
+      <div id="profNote"></div>
       <div class="strip" id="strip"></div>
       <div class="tiles" id="homeTiles"></div>
       <div class="rows" id="homeRows"></div>
@@ -431,7 +432,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
     </div>
     <button class="btn primary" id="installBtn" type="button" hidden>Install MyVan on this device</button>
     <div class="rows"><button class="nrow" type="button" data-go="ask"><span>Ask about my van</span><span class="v muted">Questions in plain English</span></button></div>
-    <div class="group"><span class="label">Vehicle</span><div class="panel"><dl class="kv" id="vehKv"></dl></div></div>
+    <div class="group"><span class="label">Vehicle</span><div class="panel stack" style="gap:12px"><div id="profOut" class="stack" style="gap:8px"></div><dl class="kv" id="vehKv"></dl></div></div>
     <div class="group"><span class="label">Recalls</span>
       <div class="panel stack" style="gap:10px">
         <form class="lookup" id="recallForm"><input id="recallVin" maxlength="17" placeholder="17-character VIN" aria-label="VIN" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" type="submit" id="recallBtn">Check recalls</button></form>
@@ -488,7 +489,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
     <details class="help"><summary>What this app can and can't see</summary><div class="prose">
       <p>It talks to the van through the standard OBD-II port using an ELM327-compatible adapter. That covers the engine computer fully, plus the transmission's emissions-related codes.</p>
       <p>Honda-only systems such as ABS/VSA, airbags, the body modules, tire pressure, Honda Sensing and detailed 10-speed transmission data use Honda's own protocols. Those need Honda's i-HDS software or a scanner that supports Honda enhanced data.</p>
-      <p><b>Other cars:</b> live data, trouble codes and readiness monitors work on any gasoline car sold in the US from 1996 on. The normal ranges, warnings and troubleshooting steps are tuned for this van's 3.5L V6, so on a different engine some idle and airflow warnings may be wrong.</p>
+      <p><b>Other cars:</b> live data, trouble codes and readiness monitors work on any gasoline car sold in the US from 1996 on. The normal ranges, warnings and troubleshooting steps are tuned for this van's 3.5L V6, so on a different engine some idle and airflow warnings may be wrong. Add each car under More → Vehicle and pick <b>Other gasoline car</b> to turn off the ranges that only fit this V6.</p>
       <p>The troubleshooting steps here are general diagnostic guidance written for this engine. For exact specifications, wiring diagrams and pinpoint tests, use Honda's official service information at <a href="https://techinfo.honda.com" target="_blank" rel="noopener">techinfo.honda.com</a>, which sells short-term access. Each code has a notes box where you can keep what you find there.</p></div></details>
     </div>
     <p class="muted hint">MyVan Assistant version <span id="appVer"></span> · your data stays on this device (recall checks send only the VIN to NHTSA)</p>
@@ -530,10 +531,20 @@ const hex2 = n => n.toString(16).toUpperCase().padStart(2, "0");
 const toHex = arr => arr.map(hex2).join("");
 const u8 = v => [Math.max(0, Math.min(255, Math.round(v)))];
 const u16 = v => { v = Math.max(0, Math.min(65535, Math.round(v))); return [v >> 8, v & 255]; };
+// store.key maps a per-car key (drives, maint…) to the active vehicle profile's copy; raw() reads a stored key as is.
 const store = {
-  get(k, d) { try { const v = localStorage.getItem("odx:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} if (store.onSet) store.onSet(k); }
+  key: k => k,
+  raw(k, d) { try { const v = localStorage.getItem("odx:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  get(k, d) { return store.raw(store.key(k), d); },
+  set(k, v) { k = store.key(k); try { localStorage.setItem("odx:" + k, JSON.stringify(v)); } catch {} if (store.onSet) store.onSet(k); }
 };
+// Vehicle profiles (#15). The first car keeps the original keys, so nothing moves for existing data.
+// Each added car keeps its own drives, maintenance, service log, self-tests, VIN and recalls under "car.<id>.".
+const CAR_KEYS = /^(drives|maint|services|selftests|odoSource|vin|recalls)$/;
+let profCache = null, profId = store.raw("profile", "van");
+const profiles = () => profCache || (profCache = (l => Array.isArray(l) && l.length ? l : [{ id: "van", name: "My van", engine: "odyssey" }])(store.raw("profiles", null)));
+const curProfile = () => profiles().find(p => p.id === profId) || profiles()[0];
+store.key = k => { const id = curProfile().id; return id === "van" || !CAR_KEYS.test(k) ? k : `car.${id}.${k}`; };
 let units = store.get("units", "us");
 /* Appearance: Auto follows the device; Light or Dark forces it. */
 function applyTheme() {
@@ -1042,6 +1053,7 @@ async function connect(kind, opt = {}) {
     renderConnect("Checking which readings the van supports…");
     await readSupported();
     try { await readVin(); } catch {}
+    matchProfile();
     try { await readMonitors(); } catch {}
     connectBusy = false;
     onConnected();
@@ -1294,8 +1306,8 @@ function evalRules() {
     }
     if (s != null && Math.abs(s) >= 20) push("stft" + b, "warn", `Bank ${b} short-term trim at its limit`, `Short-term fuel trim is ${fmt("stft" + b)}.`, s > 0 ? (b === 1 ? "P0171" : "P0174") : (b === 1 ? "P0172" : "P0175"), ["stft" + b]);
   }
-  if (idle && warm && V.rpm != null && (V.rpm < 550 || V.rpm > 950)) push("idle", "warn", V.rpm < 550 ? "Idle speed low" : "Idle speed high", `Warm idle is ${fmt("rpm")}. Normal is ${normalText(P.rpm)}.`, V.rpm < 550 ? "P0506" : "P0507", ["rpm"]);
-  if (idle && warm && V.maf != null && (V.maf < 2 || V.maf > 7)) push("maf", "warn", "Airflow at idle out of range", `Mass airflow is ${fmt("maf")} at warm idle. About 3–5 g/s is typical.`, "P0101", ["maf"]);
+  if (idle && warm && isOdyssey() && V.rpm != null && (V.rpm < 550 || V.rpm > 950)) push("idle", "warn", V.rpm < 550 ? "Idle speed low" : "Idle speed high", `Warm idle is ${fmt("rpm")}. Normal is ${normalText(P.rpm)}.`, V.rpm < 550 ? "P0506" : "P0507", ["rpm"]);
+  if (idle && warm && isOdyssey() && V.maf != null && (V.maf < 2 || V.maf > 7)) push("maf", "warn", "Airflow at idle out of range", `Mass airflow is ${fmt("maf")} at warm idle. About 3–5 g/s is typical.`, "P0101", ["maf"]);
   const volts = V.batt ?? V.ecuv, vk = V.batt != null ? "batt" : "ecuv";
   if (volts != null) {
     if (run) {
@@ -1782,12 +1794,12 @@ function storedKeys() {
 }
 function makeBackup() {
   const data = {};
-  for (const k of storedKeys()) data[k] = store.get(k, null);
+  for (const k of storedKeys()) data[k] = store.raw(k, null);
   return { app: "myvan-assistant", format: BACKUP_FORMAT, appVersion: APP_VERSION, exported: new Date().toISOString(), data };
 }
 function summarizeBackup(data) {
   const keys = Object.keys(data), m = data.maint;
-  return { drives: Array.isArray(data.drives) ? data.drives.length : 0, notes: keys.filter(k => k.startsWith("note:") && data[k]).length, parts: m && m.items ? Object.values(m.items).filter(x => x && (x.lastMi || x.lastDate)).length : 0 };
+  return { drives: keys.filter(k => /^(car\.[^.]+\.)?drives$/.test(k) && Array.isArray(data[k])).reduce((n, k) => n + data[k].length, 0), notes: keys.filter(k => k.startsWith("note:") && data[k]).length, parts: m && m.items ? Object.values(m.items).filter(x => x && (x.lastMi || x.lastDate)).length : 0 };
 }
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 const summaryText = s => `${plural(s.drives, "drive")}, ${plural(s.notes, "code note")} and maintenance dates for ${plural(s.parts, "part")}`;
@@ -1818,7 +1830,7 @@ function applyBackup(b) {
 }
 // Re-read saved data and redraw after a restore or a sync changed it.
 function refreshAfterData() {
-  driveCache = null; maintCache = null; units = store.get("units", "us");
+  driveCache = null; maintCache = null; profCache = null; units = store.get("units", "us"); applyEngine(); renderProfiles();
   if (state.mode !== "demo") { const st = savedSelfTests(); if (st && (!state.m06 || st.at > state.m06.at)) state.m06 = st; }
   renderMaint(); renderVehicle(); renderHealth();
   if (state.elm) { buildTiles(); renderLive(); }
@@ -2773,6 +2785,92 @@ function openRecalls() {
   openSheet(recallSheetHtml(c)); wireRecallSheet(c);
 }
 
+/* ---------- vehicle profiles (#15): one profile per car, picked by VIN ---------- */
+const ENGINES = { odyssey: "2018 Odyssey 3.5L V6", generic: "Other gasoline car" };
+const ENGINE_ONLY = ["rpm", "load", "map", "maf", "timing"];
+const isOdyssey = () => curProfile().engine !== "generic";
+// Ranges tuned for the Odyssey's V6 are switched off on other cars; checks that fit any engine stay on.
+function applyEngine() {
+  const ody = isOdyssey();
+  for (const p of PARAMS) { if (!("normal0" in p)) p.normal0 = p.normal; if (ENGINE_ONLY.includes(p.key)) p.normal = ody ? p.normal0 : undefined; }
+  const t = TR.mafIdle; if (!("hi0" in t)) { t.hi0 = t.hi; t.lo0 = t.lo; }
+  t.hi = ody ? t.hi0 : undefined; t.lo = ody ? t.lo0 : undefined;
+}
+const saveProfiles = l => { store.set("profiles", l); profCache = null; };
+let profNote = null;
+function switchProfile(id) {
+  if (id === curProfile().id) return;
+  profId = id; store.set("profile", id);
+  recallMsg = null; profNote = null; homeSig = "";
+  const inp = $("#recallVin"); if (inp) inp.value = "";
+  if (!state.elm) state.m06 = savedSelfTests();
+  refreshAfterData(); renderRecalls(); renderHistory(); renderProfNote();
+}
+function renderProfiles() {
+  const el = $("#profOut"); if (!el) return;
+  const l = profiles(), c = curProfile();
+  el.innerHTML = `<label class="flabel">Car<select class="inp" id="profSel">${l.map(p => `<option value="${esc(p.id)}"${p.id === c.id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+    <p class="muted" style="font-size:.84rem" id="profInfo">${esc(ENGINES[c.engine] || ENGINES.generic)} ranges${c.vin ? ` · VIN ending ${esc(c.vin.slice(-6))}` : ""}. Drive history, maintenance and recalls shown are for this car.</p>
+    <div class="row"><button class="btn small" type="button" id="profEdit">Edit this car</button><button class="btn small" type="button" id="profAdd">Add a car</button></div>`;
+  $("#profSel").onchange = e => { switchProfile(e.target.value); renderProfiles(); };
+  $("#profEdit").onclick = () => openProfileForm(c.id);
+  $("#profAdd").onclick = () => openProfileForm();
+}
+function openProfileForm(id, vin) {
+  const e = id ? profiles().find(p => p.id === id) : null, eng = e ? e.engine : "generic";
+  openSheet(`<header><div class="t"><span class="label">Vehicle profiles</span><h2>${e ? "Edit car" : "Add a car"}</h2></div><button class="close" aria-label="Close">×</button></header>
+    <form id="profForm" class="stack" style="gap:12px">
+      <label class="flabel">Name<input class="inp" id="profName" maxlength="40" placeholder="Family sedan" value="${esc(e ? e.name : "")}"></label>
+      <label class="flabel">Engine<select class="inp" id="profEngine">${Object.entries(ENGINES).map(([k, t]) => `<option value="${k}"${eng === k ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      <p class="muted" style="font-size:.84rem">Other gasoline car turns off the idle speed, engine load, airflow and timing ranges that only fit the Odyssey's V6. Overheating, battery and fuel trim checks work on any car.</p>
+      <label class="flabel">VIN (optional)<input class="inp mono" id="profVin" maxlength="17" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Filled in when the adapter reads it" value="${esc(e ? e.vin || "" : vin || "")}"></label>
+      <p class="muted" style="font-size:.84rem">With a VIN, the app switches to this car by itself when the adapter connects.</p>
+      <p class="muted" id="profErr" role="alert" style="font-size:.88rem"></p>
+      <button class="btn primary" type="submit">${e ? "Save changes" : "Add car"}</button>
+      ${e && e.id !== "van" ? `<button class="btn" type="button" id="profDel">Delete this car and its data</button>` : ""}
+    </form>`);
+  $("#profForm").onsubmit = ev => {
+    ev.preventDefault();
+    const name = $("#profName").value.trim(), v = $("#profVin").value.toUpperCase().replace(/\s/g, ""), l = profiles().map(p => ({ ...p }));
+    if (!name) { $("#profErr").textContent = "Give the car a name, like \"Family sedan\"."; return; }
+    if (v && !vinOk(v)) { $("#profErr").textContent = "A VIN is 17 letters and numbers (never I, O or Q)."; return; }
+    const dup = v && l.find(p => p.vin === v && p.id !== (e && e.id));
+    if (dup) { $("#profErr").textContent = `That VIN already belongs to ${dup.name}.`; return; }
+    const entry = { id: e ? e.id : Date.now().toString(36), name, engine: $("#profEngine").value, vin: v || undefined };
+    const i = l.findIndex(p => p.id === entry.id);
+    if (i < 0) l.push(entry); else l[i] = entry;
+    saveProfiles(l); closeSheet();
+    if (!e) switchProfile(entry.id); else { profNote = null; refreshAfterData(); renderProfNote(); }
+    renderProfiles();
+  };
+  const del = $("#profDel");
+  if (del) del.onclick = () => {
+    if (!del.dataset.confirm) { del.dataset.confirm = "1"; del.textContent = "Tap again to delete " + e.name; return; }
+    try { for (const k of storedKeys()) if (k.startsWith(`car.${e.id}.`)) localStorage.removeItem(KEY_PREFIX + k); } catch {}
+    if (curProfile().id === e.id) switchProfile("van");
+    saveProfiles(profiles().filter(p => p.id !== e.id)); closeSheet(); refreshAfterData();
+  };
+}
+// After the adapter reads a VIN: switch to the car it belongs to, claim it for a first car with none, or offer to add it.
+function matchProfile() {
+  const vin = state.vin; if (state.mode === "demo" || !vinOk(vin)) return;
+  const l = profiles(), hit = l.find(p => p.vin === vin), c = curProfile();
+  if (hit) { if (hit.id !== c.id) { switchProfile(hit.id); profNote = { t: `Switched to ${hit.name}: the adapter read its VIN.` }; } }
+  else if (!c.vin && [vin, ""].includes(store.get("vin", ""))) saveProfiles(l.map(p => p.id === c.id ? { ...p, vin } : p));
+  else profNote = { vin };
+  renderProfiles(); renderProfNote();
+}
+function renderProfNote() {
+  const el = $("#profNote"), n = profNote, c = curProfile(); if (!el) return;
+  if (!n) { el.innerHTML = ""; return; }
+  el.innerHTML = n.vin ? `<div class="notice warn" role="status"><b>New car?</b> This car's VIN ends in ${esc(n.vin.slice(-6))}, which isn't saved for ${esc(c.name)}. Add it as its own car so its drives and maintenance stay separate.
+    <div class="row" style="margin-top:8px"><button class="btn small primary" type="button" id="profAddVin">Add this car</button>${c.vin ? "" : `<button class="btn small" type="button" id="profSame">It's ${esc(c.name)}</button>`}<button class="btn small" type="button" id="profNo">Not now</button></div></div>`
+    : `<div class="notice ok" role="status">${esc(n.t)}</div>`;
+  const b = id => el.querySelector("#" + id);
+  if (b("profAddVin")) b("profAddVin").onclick = () => openProfileForm(null, n.vin);
+  if (b("profSame")) b("profSame").onclick = () => { saveProfiles(profiles().map(p => p.id === c.id ? { ...p, vin: n.vin } : p)); profNote = null; renderProfiles(); renderProfNote(); };
+  if (b("profNo")) b("profNo").onclick = () => { profNote = null; renderProfNote(); };
+}
 /* ---------- shareable health report ---------- */
 // One model, rendered as HTML (screen, print, shared file) and as plain text (email).
 const REPORT_CSS = `.report{background:#fff;color:#1a1d1f;border:1px solid #dcdfdb;border-radius:16px;padding:20px;font:14px/1.45 Inter,system-ui,sans-serif}
@@ -3300,7 +3398,7 @@ const GOOGLE_CLIENT_ID = window.MYVAN_GOOGLE_CLIENT_ID ?? "57823011336-c57a4ibll
 const G_AUTH = "https://accounts.google.com/o/oauth2/v2/auth", G_API = "https://www.googleapis.com/drive/v3", G_UP = "https://www.googleapis.com/upload/drive/v3", G_REVOKE = "https://oauth2.googleapis.com/revoke";
 const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata", SYNC_FILE = "myvan-sync.json", SYNC_FORMAT = 1, SYNC_DELAY = 4000;
 // What travels between devices. Display settings (units, theme, pins, views) stay per device.
-const syncable = k => /^(drives|services|maint|vin|fuelPrice|recalls|recallClosed|selftests|note:.+|chk:.+)$/.test(k);
+const syncable = k => /^(profiles|fuelPrice|recallClosed|note:.+|chk:.+|(car\.[a-z0-9]+\.)?(drives|services|maint|vin|recalls|selftests))$/.test(k);
 // Sync's own bookkeeping uses another prefix, so it never ends up in a backup file.
 const ss = {
   get(k, d) { try { const v = localStorage.getItem("odxsync:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -3327,15 +3425,16 @@ function mergeSync(L, R) {
     const lt = lm[k] || 0, rt = rm[k] || 0, useL = !(k in R.data) || (k in L.data && lt >= rt);
     const win = useL ? L.data[k] : R.data[k], lose = useL ? R.data[k] : L.data[k];
     if (Math.max(lt, rt)) mtimes[k] = Math.max(lt, rt);
-    if (k === "drives") data[k] = unionBy(win, lose, d => d.t).sort((a, b) => a.t - b.t).slice(-400);
-    else if (k === "services") data[k] = unionBy(win, lose, s => s.id).filter(s => !tomb[s.id]);
+    const base = k.replace(/^car\.[^.]+\./, "");
+    if (base === "drives") data[k] = unionBy(win, lose, d => d.t).sort((a, b) => a.t - b.t).slice(-400);
+    else if (base === "services") data[k] = unionBy(win, lose, s => s.id).filter(s => !tomb[s.id]);
     else data[k] = win;
   }
   return { data, mtimes, tomb };
 }
 function localSync() {
   const data = {};
-  for (const k of storedKeys()) if (syncable(k)) data[k] = store.get(k, null);
+  for (const k of storedKeys()) if (syncable(k)) data[k] = store.raw(k, null);
   return { data, mtimes: ss.get("mtimes", {}), tomb: ss.get("tomb", {}) };
 }
 // Merge another copy into this device. Returns how many drives and service records were new here.
@@ -3720,6 +3819,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $("#appVer").textContent = APP_VERSION;
+applyEngine(); renderProfiles();
 state.m06 = savedSelfTests();
 renderConnect(); renderVehicle(); renderChecks(); renderMaint(); renderHealth(); renderRecalls(); renderSync();
 if (authRedirected) afterSignIn(); else syncNow(false);
