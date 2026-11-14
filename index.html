@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-TEzrJ8geoaR00IXaGjMjZlKngmASOh7vZF9kyg7APRk='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-CITlFJgGi7jBC0gMiOqO6vrIqaLR4nDjLzKQeGeyzVs='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -2592,16 +2592,36 @@ const COMPONENTS = [
   { id: "air", name: "Air intake and MAF", sub: "Filter and airflow sensor", trends: ["mafIdle"], maint: "airfilter", guide: "P0101", planLabel: "Needs service" }
 ];
 function series(key) { return drives().filter(d => d[key] != null).map(d => ({ t: d.t, v: d[key] })); }
+/* Personal baseline (#2): this van's normal for a trend, learned from its earliest drives (at least 10 over 2 weeks,
+   up to 20, never the latest 3). It can only add a Watch: the general limits always still apply. */
+const PB_MIN = 10, PB_DAYS = 14, PB_MAX = 20;
+function personalBase(cfg, s) {
+  if (!cfg.drift || s.length < PB_MIN + 3) return null;
+  const learn = s.slice(0, Math.min(PB_MAX, s.length - 3));
+  if ((learn[learn.length - 1].t - learn[0].t) / 864e5 < PB_DAYS) return null;
+  const v = learn.map(x => cfg.abs ? Math.abs(x.v) : x.v), med = median(v), spread = 1.4826 * median(v.map(x => Math.abs(x - med)));
+  return { med, spread, tol: Math.max(3 * spread, cfg.drift / 2), n: learn.length, from: learn[0].t, to: learn[learn.length - 1].t };
+}
 function trendGrade(cfg) {
   const s = series(cfg.key);
   if (!s.length) return null;
-  const v = s.map(x => x.v), recent = median(v.slice(-3)), base = v.length >= 6 ? median(v.slice(0, Math.min(5, v.length - 3))) : null;
+  const v = s.map(x => x.v), recent = median(v.slice(-3)), pb = personalBase(cfg, s);
+  const base = pb ? pb.med : v.length >= 6 ? median(v.slice(0, Math.min(5, v.length - 3))) : null;
   let g = "good";
   const x = cfg.abs ? Math.abs(recent) : recent;
   if (cfg.hi) { if (x >= cfg.hi[1]) g = "plan"; else if (x >= cfg.hi[0]) g = "watch"; }
   if (cfg.lo) { if (recent <= cfg.lo[1]) g = worse(g, "plan"); else if (recent <= cfg.lo[0]) g = worse(g, "watch"); }
-  if (base != null && cfg.drift) { const dd = cfg.abs ? Math.abs(recent) - Math.abs(base) : (recent - base) * (cfg.dir || 1); if (dd >= cfg.drift) g = worse(g, "watch"); }
-  return { grade: g, series: s, recent, base, msg: g !== "good" ? cfg.msg(recent, base) : "" };
+  if (base != null && cfg.drift) {
+    const dd = cfg.abs ? Math.abs(recent) - Math.abs(base) : (recent - base) * (cfg.dir || 1);
+    if (dd >= (pb ? Math.min(pb.tol, cfg.drift) : cfg.drift)) g = worse(g, "watch");
+  }
+  return { grade: g, series: s, recent, base, pb, msg: g !== "good" ? cfg.msg(recent, base) + (pb && g === "watch" ? " That's outside this van's own normal range." : "") : "" };
+}
+function baseText(cfg, res) {
+  if (!cfg.drift) return "Graded against general limits.";
+  const pb = res && res.pb, n = res ? res.series.length : 0;
+  return pb ? `Your van's normal is about ${cfg.fmt(cfg.abs ? Math.abs(pb.med) : pb.med).replace(/^\+/, "")}, learned from ${pb.n} drives (${dateShort(pb.from)} to ${dateShort(pb.to)}). Grades compare recent drives with it, and the general limits still apply.`
+    : `Using general limits until there are ${PB_MIN + 3} drives over ${PB_DAYS} days to learn your van's normal (${n} so far).`;
 }
 function evalComponent(c) {
   let grade = "unknown"; const why = [], ev = [], trends = [];
@@ -2825,7 +2845,7 @@ function openComponent(id) {
     fail: "It failed its own self-test, and a trouble code usually follows. Confirm with the troubleshooting steps before replacing parts."
   }[g];
   const tests = e.ev.length ? `<div class="group"><span class="label">Self-test results</span><div class="list" id="testList">${testListHtml(e.ev)}</div>${e.ev.some(x => x.margin != null && !x.notRun) ? `<p class="muted" style="font-size:.84rem">The van decides pass or fail on each test. The bar shows how far the reading is from Honda's limit: a fuller bar means more room to spare. A passing test is never a reason on its own to replace a part.</p>` : ""}</div>` : "";
-  const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div></div>`).join("");
+  const trends = e.trends.filter(x => x.res && x.res.series.length >= 2).map(x => `<div class="block"><div class="row" style="justify-content:space-between"><b>${esc(x.cfg.label)}</b><span class="chip ${GR[x.res.grade].c}">${esc(x.cfg.fmt(x.res.recent))}</span></div><svg class="spark trend" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="${esc(x.cfg.label)} over ${x.res.series.length} drives">${trendSvg(x.res.series, x.cfg)}</svg><div class="row muted" style="justify-content:space-between;font-size:.78rem"><span>${dateShort(x.res.series[0].t)}</span><span>${x.res.series.length} drives · dashed line is the warning level</span><span>${dateShort(x.res.series[x.res.series.length - 1].t)}</span></div><p class="muted" data-base="${x.cfg.key}" style="font-size:.82rem;margin-top:6px">${esc(baseText(x.cfg, x.res))}</p></div>`).join("");
   const ms = c.maint ? maintStatus(c.maint) : null;
   const outs = [...(c.trends || []).map(k => trendOutText(TR[k], forecastTrend(TR[k]))), c.maint && forecastMaint(c.maint) ? forecastMaint(c.maint).text : ""].filter(Boolean);
   openSheet(`<header><div class="t"><span class="label">${esc(c.sub || "")}</span><h2>${esc(c.name)}</h2><div class="row" style="gap:6px"><span class="chip ${GR[g].c}">${esc(gradeText(c, g))}</span></div></div><button class="close" aria-label="Close">×</button></header>
