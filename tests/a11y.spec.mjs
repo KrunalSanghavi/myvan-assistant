@@ -4,6 +4,8 @@ import { test, expect, connectDemo, tab } from "./fixtures.mjs";
 // #65: every main screen passes axe-core's WCAG 2.1 A and AA checks, in light and dark mode.
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 async function check(page, where) {
+  // Panels fade in; checking mid-fade would measure contrast at partial opacity.
+  await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
   const r = await new AxeBuilder({ page }).withTags(WCAG).analyze();
   const found = r.violations.map(v => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.slice(0, 3).map(n => n.target.join(" ")).join(" | ")}`);
   expect(found, `accessibility problems on ${where}`).toEqual([]);
