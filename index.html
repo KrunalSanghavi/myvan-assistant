@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-3yXJywLQHrYinuknY42WPCI/GDfFla6jDKOjCMsL1dY='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-TiHjlCAAenkwx2b0H/y4nxSWm4JMuxerrMTGBS1T6xc='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -849,7 +849,7 @@ const demo = {
   ff: { rpm: 705, speed: 0, load: 23.1, ect: 89, iat: 31, map: 32, maf: 3.8, tps: 13.7, stft1: 0.8, ltft1: 1.6, stft2: 3.1, ltft2: 12.5, timing: 11.5, ecuv: 14.1, runtime: 1834 },
   vals() {
     const t = (performance.now() - this.t0) / 1000;
-    const ph = t % 70, drive = ph > 22 && ph < 60;
+    const ph = t % 70, drive = !this.park && ph > 22 && ph < 60;
     const ramp = drive ? Math.min(1, (ph - 22) / 8, (60 - ph) / 5) : 0;
     const r = a => (Math.random() - .5) * 2 * a;
     const speed = Math.max(0, 74 * ramp + r(1.2) * ramp);
@@ -2023,6 +2023,7 @@ function decodeUdsDtcs(b) {
 const liveSnap = () => Object.fromEntries(["rpm", "speed", "ect", "iat", "batt", "load"].filter(k => V[k] != null).map(k => [k, rnd(V[k], 1)]));
 const atCmd = c => state.elm.send(c, 2000);
 let diagProto = null;
+let findCheckMs = 15000;   // tests shorten it
 async function holdPolling() { state.hold = true; await sleep(state.mode === "demo" ? 300 : 450); }
 const tName = t => t.bits === 29 ? "18DA" + hex2(t.addr) + "F1" : t.tx.toString(16).toUpperCase();
 async function diagTarget(t) {
@@ -2100,7 +2101,7 @@ function finderHtml() {
   const odo = num0(maintData().odo), src = store.get("odoSource", null);
   return `<header><div class="t"><span class="label">Read-only</span><h2>Honda data finder</h2></div><button class="close" aria-label="Close">×</button></header>
     <div class="block prose"><p>Your van keeps some data, like the odometer and the transmission's own codes, behind Honda's diagnostic requests instead of standard OBD-II. This finder asks each module, using <b>read requests only</b>. It can't change, reset or clear anything.</p>
-      <p><b>Park with the engine running</b> and keep the app open near the van. Live readings pause while it runs. <span id="fdMins">It takes about 5 to 15 minutes.</span></p></div>
+      <p><b>Park with the engine running</b> and keep the app open near the van. Live readings pause while it runs, apart from a speed and coolant check every 15 seconds. If the van moves or a warning comes up, it stops by itself. <span id="fdMins">It takes about 5 to 15 minutes.</span></p></div>
     ${src ? `<div class="notice" id="fdSaved">Using: ${esc(srcText(src))}. <button class="link" type="button" id="fdForget">Stop using it</button></div>` : ""}
     <label class="flabel">What to look for<select class="inp" id="fdFocus">${Object.entries(FOCUS).map(([k, f]) => `<option value="${k}">${esc(f.t)}</option>`).join("")}</select></label>
     <label class="flabel" id="fdOdoRow">Odometer on the dash right now (miles)<input class="inp" id="fdOdo" inputmode="numeric" value="${esc(odo != null ? String(odo) : "")}" placeholder="e.g. 109412"></label>
@@ -2154,6 +2155,7 @@ async function runFinder(q) {
   if (!state.elm) { prog("Connect to the van first."); return; }
   if (F.odo && (target == null || target < 10)) { prog("Type the odometer from the dash first, so the finder knows what to look for."); return; }
   if (state.mode !== "demo" && !state.isCan) { prog("This needs a van that talks CAN (2008 and newer)."); return; }
+  if (V.speed > 5) { prog("Park first. The finder only runs while the van is stopped."); return; }
   const mods29 = parseHexList(q("#fd29").value).filter(a => a <= 0xFF && a !== 0xF1).map(addr => ({ bits: 29, addr }));
   const mods11 = parseHexList(q("#fd11").value).filter(a => a >= 0x700 && a <= 0x7F7).map(tx => ({ bits: 11, tx }));
   const ranges = parseIdRanges(q("#fdIds").value);
@@ -2162,26 +2164,40 @@ async function runFinder(q) {
   q("#fdStart").hidden = true; q("#fdStop").hidden = false; q("#fdBg").hidden = false; q("#fdOut").innerHTML = "";
   const old = fq("fdDone"); if (old) old.remove();
   let wake = null; try { if (navigator.wakeLock) wake = await navigator.wakeLock.request("screen"); } catch {}   // keep the screen on while it scans
+  if (state.mode === "demo") demo.park = true;   // the owner parks for the finder
   await holdPolling();
+  // Every 15 s: go back to normal OBD, read speed and coolant, and check the alert rules.
+  // Moving, or any urgent warning, stops the finder so live readings and alerts take over.
+  let tmo = "ATST19", lastChk = Date.now();
+  const guard = async t => {
+    if (finder.stop || Date.now() - lastChk < findCheckMs) return;
+    lastChk = Date.now(); await diagRestore();
+    for (const k of ["speed", "ect"]) { const p = PARAMS.find(x => x.key === k); try { await readParam(p); } catch {} }
+    afterSample();
+    if (V.speed > 5) { finder.stop = true; finder.err = "the van started moving. Park, then start again."; return; }
+    const hot = evalRules().find(f => f.level === "crit");
+    if (hot) { finder.stop = true; finder.err = hot.title + ". Live readings are back on."; return; }
+    await atCmd(tmo); diagProto = null; await diagTarget(t);
+  };
   try {
-    await atCmd("ATST19");
+    await atCmd(tmo);
     const cands = [...mods29, ...mods11];
     for (let i = 0; i < cands.length && !finder.stop; i++) {
       prog(`Looking for modules: ${i + 1} of ${cands.length}. Found ${finder.mods.length}.`);
-      await diagTarget(cands[i]);
+      await diagTarget(cands[i]); await guard(cands[i]); if (finder.stop) break;
       const r = await diagRead("22F190", 300);
       if (r) { finder.mods.push({ t: cands[i], name: tName(cands[i]), label: modLabel(cands[i]) }); finder.log.push({ mod: tName(cands[i]), req: "22F190", res: r[0] === 0x62 ? "62F190 (VIN, not saved)" : toHex(r) }); }
     }
     if (F.codes) for (let i = 0; i < finder.mods.length && !finder.stop; i++) {
       const m = finder.mods[i];
       prog(`Reading trouble codes: module ${i + 1} of ${finder.mods.length}.`);
-      await diagTarget(m.t);
+      await diagTarget(m.t); await guard(m.t); if (finder.stop) break;
       const r = await diagRead("1902FF", 1500);
       if (r && r[0] === 0x59) { finder.log.push({ mod: m.name, req: "1902FF", res: toHex(r) }); finder.codes.push({ mod: m.name, label: m.label, list: decodeUdsDtcs(r) }); }
       else { tally(m.name, r); finder.codes.push({ mod: m.name, label: m.label, list: null }); }
     }
     else {
-      if (F.slow) await atCmd("ATST4B");   // about 300 ms: the instrument panel answers slowly and not every time
+      if (F.slow) { tmo = "ATST4B"; await atCmd(tmo); }   // about 300 ms: the instrument panel answers slowly and not every time
       const total = finder.mods.length * ranges.reduce((a, r) => a + r[3] - r[2] + 1, 0);
       let n = 0;
       for (const m of finder.mods) {
@@ -2191,6 +2207,7 @@ async function runFinder(q) {
           const req = svc + id.toString(16).toUpperCase().padStart(w, "0");
           if (++n % 8 === 0 || n === total) prog(`Reading ${m.label}: ${n} of ${total}.${F.odo ? ` Matches so far: ${finder.matches.length}.` : ` Answers so far: ${finder.log.length}.`}`);
           if (req === "22F190") continue;
+          await guard(m.t); if (finder.stop) break;
           let r = await diagRead(req, F.slow ? 1500 : 600);
           if (!r && F.slow) r = await diagRead(req, 1500);   // one retry when it stays silent
           if (!r || r[0] !== parseInt(svc, 16) + 0x40) { tally(m.name, r); continue; }
@@ -2202,7 +2219,7 @@ async function runFinder(q) {
     }
     finder.snap.push(liveSnap());
   } catch (e) { finder.err = String(e && e.message || e); }
-  finally { await diagRestore(); state.hold = false; try { if (wake) await wake.release(); } catch {} }
+  finally { await diagRestore(); state.hold = false; demo.park = false; try { if (wake) await wake.release(); } catch {} }
   finder.running = false; delete finder.prog;
   try { store.set("finderLast", finder); } catch {}
   const sum = finderSummary();
@@ -3904,7 +3921,6 @@ async function syncNow(manual, replace) {
   if (isDemo) { if (!demoSync || !manual) return; }
   else {
     if (!ss.get("acct")) return;
-    if (!manual && state.elm) return;   // never during a drive; it runs again after disconnecting
     if (navigator.onLine === false) { if (manual) { syncMsg = { lvl: "warn", t: "You're offline. Your changes will sync the next time you're online." }; renderSync(); } return; }
     if (!tokenOk()) { if (manual) { signIn(); return; } syncMsg = { lvl: "", t: "Google sign-in has expired, which happens after about an hour. Tap Sync now to sign in again." }; renderSync(); return; }
   }
@@ -3937,9 +3953,8 @@ function renderSync() {
   const last = ss.get("lastSync"), pass = ss.get("pass", ""), when = isDemo ? "" : last ? (Date.now() - last < 864e5 ? timeAgo(last) : new Date(last).toLocaleDateString([], { dateStyle: "medium" })) : "not yet";
   out.innerHTML = `<div class="row between" style="gap:10px"><div><span id="syncWho">Signed in as <b>${esc(acct.email || "your Google account")}</b></span>${isDemo ? "" : `<br><span class="muted" style="font-size:.82rem" id="syncWhen">Last synced ${esc(when)}${pass ? " · locked with a passphrase" : ""}</span>`}</div>
       <div class="row"><button class="btn small" id="syncGo" type="button"${syncBusy ? " disabled" : ""}>${syncBusy === "sync" ? "Syncing…" : syncBusy === "signin" ? "Waiting for Google…" : "Sync now"}</button><button class="btn small" id="syncOutBtn" type="button">Sign out</button></div></div>
-    ${!isDemo && state.elm ? `<div class="notice" id="syncPaused">Connected to the van, so automatic sync is paused. It syncs when you disconnect. Sync now still works.</div>` : ""}
     ${msg}${reset}
-    ${isDemo ? "" : `<p class="muted" style="font-size:.82rem;margin:0" id="syncTip">Syncs by itself when you open the app, after changes, and after you disconnect from the van. About once an hour Google asks you to sign in again: just tap Sync now.</p>`}
+    ${isDemo ? "" : `<p class="muted" style="font-size:.82rem;margin:0" id="syncTip">Syncs by itself when you open the app, after changes and at the end of each drive, even while connected to the van. About once an hour Google asks you to sign in again: just tap Sync now.</p>`}
     ${isDemo ? "" : `<details class="help"${syncMsg && /passphrase/.test(syncMsg.t) ? " open" : ""}><summary>Passphrase (optional)</summary><div class="prose">
       <p>With a passphrase, your data is scrambled on this device before it goes to Google, so only your devices can read it. Use the same passphrase on each device. If you forget it, the Google Drive copy can't be read, but the data on your devices is safe.</p>
       <form class="lookup" id="syncPassForm"><input id="syncPass" type="password" autocomplete="off" aria-label="Sync passphrase" placeholder="${pass ? "Passphrase is set" : "Choose a passphrase"}" style="flex:1 1 100%;max-width:none;text-transform:none;font-family:inherit"><button class="btn" type="submit">${pass ? "Change" : "Save"}</button>${pass ? `<button class="btn" type="button" id="syncPassOff">Remove</button>` : ""}</form>

@@ -134,3 +134,42 @@ test("recalls are listed newest first by NHTSA's date, even from an old saved ch
   const ids = await page.locator("#recallList [data-rid]").evaluateAll(e => e.map(x => x.dataset.rid));
   expect(ids).toEqual(["26V332000", "26V227000", "23V858000", "18V777000"]);
 });
+
+// The finder runs only while parked, and checks speed and coolant while it runs.
+async function startCodesScan(page) {
+  await connectDemo(page);
+  await page.evaluate(() => { findCheckMs = 300; });
+  const sheet = await openFinder(page);
+  await sheet.locator("#fdFocus").selectOption("codes");
+  await sheet.locator("summary", { hasText: "Advanced" }).click();
+  await sheet.locator("#fd29").fill("00-FF"); await sheet.locator("#fd11").fill("7E0");
+  return sheet;
+}
+
+test("won't start while the van is moving", async ({ page }) => {
+  const sheet = await startCodesScan(page);
+  await page.evaluate(() => { pushVal("speed", 40); });
+  await sheet.getByRole("button", { name: "Start" }).click();
+  await expect(sheet.locator("#fdProg")).toContainText("Park first");
+  expect(await page.evaluate(() => state.hold)).toBeFalsy();
+});
+
+test("stops by itself when the van starts moving, and live readings come back", async ({ page }) => {
+  const sheet = await startCodesScan(page);
+  await sheet.getByRole("button", { name: "Start" }).click();
+  await expect(sheet.locator("#fdProg")).toContainText("Looking for modules");
+  await page.evaluate(() => { demo.park = false; demo.t0 = performance.now() - 40000; });   // mid-drive
+  await expect(sheet.locator("#fdProg")).toContainText("Stopped: the van started moving", { timeout: 15000 });
+  expect(await page.evaluate(() => [demo.p29, demo.hdr, state.hold])).toEqual([false, "7DF", false]);
+  const n = await page.evaluate(() => (H.speed || []).length);
+  await expect.poll(() => page.evaluate(() => (H.speed || []).length), { timeout: 10000 }).toBeGreaterThan(n);
+});
+
+test("stops by itself on an urgent warning such as overheating", async ({ page }) => {
+  const sheet = await startCodesScan(page);
+  await sheet.getByRole("button", { name: "Start" }).click();
+  await expect(sheet.locator("#fdProg")).toContainText("Looking for modules");
+  await page.evaluate(() => { const v = demo.vals; demo.vals = function () { return Object.assign(v.call(this), { ect: 121 }); }; });
+  await expect(sheet.locator("#fdProg")).toContainText("Stopped: Engine is overheating", { timeout: 15000 });
+  expect(await page.evaluate(() => state.hold)).toBe(false);
+});
