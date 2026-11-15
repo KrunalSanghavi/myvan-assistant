@@ -66,7 +66,7 @@ jobs:
   # can install it on a phone from a plain link (Actions artifacts are hard to reach on a phone).
   publish:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
