@@ -11,6 +11,13 @@ Installable web app (PWA) that monitors a 2018 Honda Odyssey Elite over OBD-II t
 - `tests/`: Playwright smoke tests that drive the demo van. `scripts/check.mjs`: static checks (script parses, versions match, no old branding).
 - `ROADMAP.md`: each item links to its GitHub issue.
 
+## Android (`android/`)
+- Native app for #85; the plan is `docs/android-architecture.md`. Kotlin, Compose, Gradle with `android/gradle/libs.versions.toml`. CI: `.github/workflows/android.yml` (no wrapper yet: it runs a pinned `gradle` from `android/`).
+- **Allowlist:** only `:core:obd` produces bytes for the adapter, and only as a `SafeCommand`: OBD modes 01, 02, 03, 06, 07, 09, the fixed AT list, and `FIND_SAFE`. Mode 04, 10, 11, 14, 27, 2E, 31, `ATPP` and `ATMA` can never be added without asking the owner.
+- **Fixtures:** after changing `PARAMS`, `parseMsgs`, `FIND_SAFE` or `demo.emulate()`, run `npm run fixtures` and commit the JSON. CI fails if it is stale. Kotlin ports must still match the JS.
+- **Modules:** `:core:model` and `:core:obd` are pure Kotlin/JVM. Only `:app` and `:core:testing` (later `:core:bluetooth` and `:service:logger`) may depend on `:core:obd`; features never do. Root `build.gradle.kts` enforces this. Add modules only when their PR arrives.
+- No permissions, network calls or analytics beyond what the doc lists for each PR.
+
 ## Conventions
 - Keep everything in `index.html`. Match the existing terse style: `$()` selector, `esc()` for every interpolated string in HTML, template-literal rendering, `store.get/set` (prefixes keys with `odx:`) wrapped in try/catch.
 - Internal values are metric; convert at display time with `conv`/`num`/`unitOf`.

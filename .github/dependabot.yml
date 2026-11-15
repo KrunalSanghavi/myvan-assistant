@@ -12,3 +12,11 @@ updates:
       # One PR for all Actions updates, so pieces that must match (CodeQL init/analyze) move together.
       actions:
         patterns: ["*"]
+  - package-ecosystem: gradle
+    directory: /android
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      # One PR, so Kotlin, AGP and Compose move together.
+      android:
+        patterns: ["*"]
