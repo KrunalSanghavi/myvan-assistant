@@ -62,6 +62,32 @@ jobs:
             android/**/build/reports/
             android/**/build/test-results/
           retention-days: 7
+  # After a merge to main, the debug APK goes on the "android-test" pre-release, so the owner
+  # can install it on a phone from a plain link (Actions artifacts are hard to reach on a phone).
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: myvan-debug-apk, path: apk }
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          mv apk/app-debug.apk apk/myvan-test.apk
+          notes="Test build of the Android app (#85), from commit ${SHA:0:7}. Not a release.
+          To install: on your phone, tap myvan-test.apk below, then Install. If it won't install over an older test build, uninstall MyVan first."
+          if gh release view android-test >/dev/null 2>&1; then
+            gh release edit android-test --notes "$notes" --prerelease
+          else
+            gh release create android-test --prerelease --target "$SHA" --title "Android test build" --notes "$notes"
+          fi
+          gh release upload android-test apk/myvan-test.apk --clobber
   gate:
     name: Android build
     needs: [changes, build]
