@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-uKqxMNn6TFH6uwFX2I4UgYdoA7JSl+tRuBHIEGfxUPw='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-3yXJywLQHrYinuknY42WPCI/GDfFla6jDKOjCMsL1dY='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://vpic.nhtsa.dot.gov https://api.nhtsa.gov https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com https://api.x.ai; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MyVan Assistant</title>
 <meta name="description" content="Live OBD-II health monitor and troubleshooting for a 2018 Honda Odyssey">
@@ -70,6 +70,20 @@ a{color:var(--accent)}
 .btn.danger{background:transparent;color:var(--crit)}
 .btn.warnbtn{background:var(--warn);color:var(--bg);border-color:transparent}
 .btn.small{min-height:36px;padding:0 12px;font-size:.86rem;border-radius:10px}
+/* drive mode: a dim, nearly black screen that stays on for the whole drive */
+.drivev{position:fixed;inset:0;z-index:80;background:#000;color:#E8ECEE;display:flex;flex-direction:column;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px));overflow:hidden}
+.drivev .dvin{flex:1;display:flex;flex-direction:column;gap:18px;max-width:640px;width:100%;margin:0 auto;transition:transform 1s}
+.drivev .dvtop{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.drivev h2{font-size:1rem;font-weight:600;color:#B8C2C8}
+.drivev .dvstat{font-size:.9rem;color:#B8C2C8}
+.drivev .dvgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1;align-content:center}
+.drivev .dvv{display:flex;flex-direction:column;gap:2px}
+.drivev .dvv b{font-family:var(--f-display);font-size:clamp(2.6rem,13vw,5rem);font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:#F2F4F5}
+.drivev .dvv span{font-size:.85rem;color:#B8C2C8}
+.drivev .dvalert{border-radius:14px;padding:12px 14px;font-weight:600;background:#3A1A14;color:#FFB4A3;border:1px solid #7A3A2C}
+.drivev .dvalert.warn{background:#2A2214;color:#F7CF7A;border-color:#5C4A20}
+.drivev .dvok{color:#9FD9E4;font-size:.95rem}
+.drivev .btn{background:#171B1F;border-color:#3A444C;color:#F2F4F5}
 .btn:disabled{opacity:.45;cursor:default}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:500;cursor:pointer}
 .link:hover{text-decoration:underline}
@@ -340,6 +354,7 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
     <div id="connectBox"></div>
     <div id="liveBox" class="stack" hidden>
       <div id="profNote"></div>
+      <div class="row between" id="driveRow" style="align-items:center;gap:12px"><button class="btn primary" type="button" id="driveBtn">Start Drive mode</button><span class="muted" style="font-size:.84rem;flex:1">Keeps the screen on and records the whole drive. Keep the phone on a charger.</span></div>
       <div class="strip" id="strip"></div>
       <div class="tiles" id="homeTiles"></div>
       <div class="rows" id="homeRows"></div>
@@ -510,6 +525,8 @@ textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:1
     </div>
   </section>
 </div>
+
+<div class="drivev" id="driveView" role="dialog" aria-modal="true" aria-labelledby="driveTitle" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="Sections">
   <div class="railbrand"><img src="icon-192.png" alt="">MyVan</div>
@@ -1013,7 +1030,7 @@ async function knownDevice(kind) {
 }
 let autoTries = 0;
 async function autoReconnect(dev) {
-  await disconnect("Bluetooth dropped. Reconnecting…", true);
+  await disconnect("Bluetooth dropped. Reconnecting…", true, true);
   for (autoTries = 1; autoTries <= 3; autoTries++) {
     renderConnect(`Bluetooth dropped. Reconnecting to ${dev.name || "the adapter"} (try ${autoTries} of 3)…`);
     await sleep(state.mode === "ble" && dev.__fake ? 50 : 1500 * autoTries);
@@ -1021,7 +1038,9 @@ async function autoReconnect(dev) {
     await connect("ble", { dev, auto: true });
     if (state.elm) { autoTries = 0; return; }
   }
-  autoTries = 0; connectMsg = "Lost the adapter. Tap Reconnect when you're back in range."; renderConnect();
+  autoTries = 0;
+  if (drv.on) { driveReconnect(); return; }
+  connectMsg = "Lost the adapter. Tap Reconnect when you're back in range."; renderConnect();
 }
 
 // opt.dev: a Bluetooth device to reuse (reconnect). opt.reconnect: use the remembered adapter, without the picker if allowed.
@@ -1094,9 +1113,11 @@ function renderConnLabel() {
   if (!state.conn) return;
   $("#connText").textContent = state.mode === "demo" ? "Demo van" + (state.silent ? " · no answer" : "") : "Connected · " + (state.silent ? "no answer from the engine" : state.conn.name);
 }
-async function disconnect(msg, quiet) {
+// keep: the drive in progress is saved to pick up again after a reconnect, instead of ending it.
+async function disconnect(msg, quiet, keep) {
   state.polling = false;
-  try { endDrive(); } catch {}
+  try { if (keep) checkpointDrive(); else endDrive(); } catch {}
+  if (!keep && drv.on) stopDriveMode();
   const t = state.conn, elm = state.elm;
   // Ask the adapter to drop into low-power mode before letting go (ignored by adapters that don't support it).
   if (elm && state.mode !== "demo") { try { await Promise.race([elm.send("ATLP", 800), sleep(900)]); } catch {} }
@@ -1105,7 +1126,7 @@ async function disconnect(msg, quiet) {
   state.silent = false; for (const k in VT) delete VT[k]; fuelRaw.length = 0;
   $("#connPill").className = "pill"; $("#connText").textContent = "Not connected"; $("#discBtn").hidden = true;
   $("#connectBox").hidden = false; $("#liveBox").hidden = true;
-  connectMsg = msg || ""; if (!quiet) renderConnect(); renderVehicle();
+  connectMsg = msg || ""; if (!quiet) renderConnect(); renderVehicle(); renderDriveView();
   syncAfterDisconnect();
 }
 
@@ -1269,8 +1290,9 @@ async function pollLoop() {
   const live = PARAMS.filter(p => p.pid != null && state.supported.has(p.pid));
   const fast = live.filter(p => p.fast), slow = live.filter(p => !p.fast);
   let cycle = 0, si = 0, fails = 0;
+  const elm = state.elm;   // a loop left over from an earlier connection stops instead of sharing the new one
   try { await readBatt(); } catch {}
-  while (state.polling && state.elm) {
+  while (state.polling && state.elm === elm) {
     if (state.hold) { await sleep(150); continue; }   // the data finder or a module read is using the adapter
     try {
       for (const p of fast) { if (!state.polling) return; if (state.hold) break; await readParam(p); }
@@ -1282,7 +1304,11 @@ async function pollLoop() {
       if (state.mode !== "demo" && !state.supported.has(0xA6) && store.get("odoSource", null) && Date.now() - (state.odoReadAt || 0) > 600000) { state.odoReadAt = Date.now(); await readOdoSource(); }
       fails = 0;
     } catch (e) {
-      if (++fails > 6) { disconnect("Lost contact with the adapter. Check it's still plugged in, then reconnect."); return; }
+      if (++fails > 6) {
+        if (state.elm !== elm) return;
+        if (drv.on) { await disconnect("", true, true); driveReconnect(); return; }   // Drive mode keeps trying
+        disconnect("Lost contact with the adapter. Check it's still plugged in, then reconnect."); return;
+      }
     }
     cycle++;
     afterSample();
@@ -1419,6 +1445,7 @@ const ALERT_AFTER = { cat1: 32, cat2: 32 };
 function afterSample() {
   dropStale();
   try { trackDrive(); } catch {}
+  try { driveTick(); } catch {}
   const raw = evalRules(), ids = new Set(raw.map(f => f.id));
   for (const id in state.counters) if (!ids.has(id)) state.counters[id] = 0;
   const active = [];
@@ -1441,7 +1468,7 @@ function afterSample() {
 
 /* ---------- rendering ---------- */
 let raf = 0;
-function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "more") renderVehicle(); if (clearOpen && engineRunning() !== clearShownRunning) renderClearConfirm(); if (sheetRefresh) sheetRefresh(); }); }
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderLive(); updateBadges(); if (current === "checks") renderChecks(); if (current === "health" && Date.now() - lastHealth > 4000) renderHealth(); if (current === "log") renderLogInfo(); if (current === "more") renderVehicle(); if (clearOpen && engineRunning() !== clearShownRunning) renderClearConfirm(); if (sheetRefresh) sheetRefresh(); renderDriveView(); }); }
 
 function renderConnect(busy) {
   const box = $("#connectBox");
@@ -2285,7 +2312,7 @@ function tripStatsHtml() {
 function recentTripsHtml() {
   const ds = drives().filter(d => d.km != null).slice(-8).reverse();
   if (!ds.length) return `<div class="empty">Trips longer than 2 minutes are saved here.</div>`;
-  return `<div class="list" id="tripList">${ds.map(d => `<div class="item"><div class="body"><b>${esc(dateShort(d.t))}</b><span class="muted" style="font-size:.84rem">${esc(tripDist(d.km))} · ${esc(durText(d.dur))}</span></div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(econText(d.km, d.fuelL))}</b><br><span class="muted" style="font-size:.8rem">${esc(d.cost != null ? tripMoney(d.cost) : tripFuel(d.fuelL || 0))}</span></div></div>`).join("")}</div>`;
+  return `<div class="list" id="tripList">${ds.map(d => `<div class="item"><div class="body"><b>${esc(dateShort(d.t))}</b><span class="muted" style="font-size:.84rem">${esc(tripDist(d.km))} · ${esc(durText(d.dur))}${d.gapSec ? ` · ${esc(durText(d.gapSec))} not recorded` : ""}</span></div><div style="text-align:right;font-variant-numeric:tabular-nums;flex:none"><b>${esc(econText(d.km, d.fuelL))}</b><br><span class="muted" style="font-size:.8rem">${esc(d.cost != null ? tripMoney(d.cost) : tripFuel(d.fuelL || 0))}</span></div></div>`).join("")}</div>`;
 }
 function openTrip() {
   const fp = store.get("fuelPrice", null), unit = units === "us" ? "gal" : "L";
@@ -2322,6 +2349,11 @@ const rnd = (v, d) => v == null || isNaN(v) ? null : +v.toFixed(d);
 const capPush = (arr, v) => { if (v == null) return; arr.push(v); if (arr.length > 3000) arr.shift(); };
 function trackDrive() {
   const now = Date.now(), running = V.rpm > 400;
+  if (state.drive) {
+    const fresh = Math.max(0, ...Object.values(VT));
+    if (fresh <= state.drive.lastSeen) return;   // nothing new came in: old readings aren't more driving
+    noteGap(state.drive, fresh);
+  }
   if (!running) {
     if (V.batt != null) { state.offV = (state.offV || []).filter(x => now - x[0] < 90000); state.offV.push([now, V.batt]); }
     const d = state.drive;
@@ -2329,10 +2361,15 @@ function trackDrive() {
     return;
   }
   if (!state.drive) {
+    const cp = takeCheckpoint();
+    if (cp && cp.mode === state.mode && now - (cp.d.lastSeen || cp.at) < drv.resumeMs) { state.drive = cp.d; noteGap(cp.d, now); }   // the same drive, after a short break
+    else if (cp) finishCheckpoint(cp);
+  }
+  if (!state.drive) {
     const off = state.offV || [];
     const rest = off.filter(x => now - x[0] > 8000).map(x => x[1]), crank = off.filter(x => now - x[0] <= 8000).map(x => x[1]);
     state.drive = { start: now, ectStart: V.ect, preV: rest.length ? median(rest) : null, crankMin: crank.length ? Math.min(...crank) : null,
-      idle: { ltft1: [], ltft2: [], stft1: [], stft2: [], maf: [], rpm: [] }, run: [], c1: [], c2: [], warmup: null, maxEct: null, trip: newTrip(), lastT: null };
+      idle: { ltft1: [], ltft2: [], stft1: [], stft2: [], maf: [], rpm: [] }, run: [], c1: [], c2: [], warmup: null, maxEct: null, trip: newTrip(), lastT: null, lastSeen: now, gapSec: 0 };
     state.offV = [];
   }
   const d = state.drive; d.offSince = null;
@@ -2352,11 +2389,12 @@ function misfireSnapshot() {
   for (let c = 1; c <= 6; c++) { const t = state.m06.tests.find(t => t.mid === 0xA1 + c && t.tid === 0x0B); out.push(t ? t.v : null); }
   return out.some(v => v != null) ? out : null;
 }
-function endDrive() {
-  const d = state.drive; state.drive = null;
+// d: a drive saved before a break that never resumed, ended at the time it was last seen.
+function endDrive(d = state.drive, end = Date.now()) {
+  if (d === state.drive) { state.drive = null; clearCheckpoint(); }
   if (!d) return;
   state.lastTrip = d.trip;
-  const dur = (Date.now() - d.start) / 1000;
+  const dur = (end - d.start) / 1000;
   if (dur < 120) return;
   const ppl = fuelPricePerL(), t = d.trip;
   const im = k => d.idle[k].length >= 20 ? mean(d.idle[k]) : null;
@@ -2365,7 +2403,8 @@ function endDrive() {
     mafIdle: rnd(im("maf"), 2), rpmIdle: rnd(im("rpm"), 0), rpmSd: d.idle.rpm.length >= 20 ? rnd(stdev(d.idle.rpm), 1) : null,
     restV: rnd(d.preV, 2), crankV: rnd(d.crankMin, 2), runV: rnd(mean(d.run), 2), warmup: rnd(d.warmup, 0), maxEct: rnd(d.maxEct, 1),
     o2sd1: rnd(stdev(d.c1), 3), o2sd2: rnd(stdev(d.c2), 3), mis: misfireSnapshot(),
-    km: rnd(t.km, 2), fuelL: t.maf ? rnd(t.fuelL, 3) : null, idleSec: Math.round(t.idleSec), cost: t.maf && ppl ? rnd(t.fuelL * ppl, 2) : null });
+    km: rnd(t.km, 2), fuelL: t.maf ? rnd(t.fuelL, 3) : null, idleSec: Math.round(t.idleSec), cost: t.maf && ppl ? rnd(t.fuelL * ppl, 2) : null,
+    ...(d.gapSec >= 1 ? { gapSec: Math.round(d.gapSec), partial: true } : {}) });
   renderHealth();
 }
 function seedDemoDrives() {
@@ -2380,6 +2419,112 @@ function seedDemoDrives() {
       mis: [0, Math.max(0, Math.round(3 * k + j(.4))), 0, 0, 0, 0] });
   }
   return out;
+}
+
+/* ---------- drive mode: keep monitoring for a whole drive while the app is in front ---------- */
+// A web page can't use Bluetooth in the background, so Drive mode keeps the screen on (dimmed),
+// saves the drive in progress every 30 s and reconnects by itself when the app comes back.
+const drv = { on: false, wake: null, kind: null, dev: null, hiddenAt: null, offSince: null, lostSince: null, lastCp: 0, since: 0, retrying: false,
+  offMs: 300000, resumeMs: 300000, cpMs: 30000, retryMs: 5000, checkMs: 4000 };
+const CP_KEY = "odxdev:drive";   // device-specific, so never in backups or sync
+function checkpointDrive() {
+  drv.lastCp = Date.now();
+  const d = state.drive; if (!d) return;
+  try { localStorage.setItem(CP_KEY, JSON.stringify({ mode: state.mode, at: Date.now(), d })); } catch {}
+}
+function clearCheckpoint() { try { localStorage.removeItem(CP_KEY); } catch {} }
+function takeCheckpoint() { let cp = null; try { cp = JSON.parse(localStorage.getItem(CP_KEY)); } catch {} clearCheckpoint(); return cp && cp.d && cp.d.start ? cp : null; }
+// A saved drive that didn't pick up again is kept as it was when last seen.
+function finishCheckpoint(cp) { if (cp.mode !== "demo" && state.mode !== "demo") endDrive(cp.d, cp.d.lastSeen || cp.at); }
+function finishStaleCheckpoint() {
+  let cp = null; try { cp = JSON.parse(localStorage.getItem(CP_KEY)); } catch {}
+  if (cp && cp.d && Date.now() - (cp.d.lastSeen || cp.at) >= drv.resumeMs) { clearCheckpoint(); if (cp.mode !== "demo") endDrive(cp.d, cp.d.lastSeen || cp.at); }
+}
+// Time with no readings (app in the background, Bluetooth dropped) is counted, not guessed.
+function noteGap(d, now) {
+  if (d.lastSeen && now - d.lastSeen > 10000) { d.gapSec = (d.gapSec || 0) + (now - d.lastSeen) / 1000; d.lastT = null; }
+  d.lastSeen = now;
+}
+async function wakeOn() {
+  if (drv.wake || document.hidden || !navigator.wakeLock) return;
+  try { const w = await navigator.wakeLock.request("screen"); drv.wake = w; if (w.addEventListener) w.addEventListener("release", () => { if (drv.wake === w) drv.wake = null; }); } catch {}
+}
+function wakeOff() { const w = drv.wake; drv.wake = null; if (w) try { w.release(); } catch {} }
+function startDriveMode() {
+  if (!state.elm) return;
+  Object.assign(drv, { on: true, kind: state.mode, dev: state.conn && state.conn.dev || null, offSince: null, lostSince: null, since: Date.now() });
+  wakeOn();
+  const v = $("#driveView"); v.hidden = false; renderDriveView();
+  const b = $("#driveExit"); if (b) b.focus();
+}
+function stopDriveMode() {
+  drv.on = false; drv.offSince = drv.lostSince = null;
+  wakeOff();
+  const v = $("#driveView"); v.hidden = true; v.innerHTML = ""; v.__html = "";
+  const b = $("#driveBtn"); if (b && !b.closest("[hidden]")) b.focus();
+}
+// Runs after every reading: saves the drive now and then, and ends Drive mode once the van is parked.
+function driveTick() {
+  const now = Date.now();
+  if (state.drive && now - drv.lastCp > drv.cpMs) checkpointDrive();
+  if (!drv.on) return;
+  drv.lostSince = null;
+  if (V.rpm > 400) { drv.offSince = null; return; }
+  if (!drv.offSince) drv.offSince = now;
+  else if (now - drv.offSince > drv.offMs) { stopDriveMode(); disconnect("The engine was off for 5 minutes, so Drive mode ended and the adapter went to sleep."); }
+}
+// Back in front: if readings stopped while away, reconnect and carry on with the same drive.
+async function driveBack() {
+  wakeOn();
+  const seen = Math.max(0, ...Object.values(VT));
+  await sleep(drv.checkMs);
+  if (!drv.on || document.hidden) return;
+  if (state.elm && Math.max(0, ...Object.values(VT)) > seen) return;   // still reading
+  if (state.elm) await disconnect("", true, true);
+  driveReconnect();
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && drv.on && !sheets.length) stopDriveMode(); });
+async function driveReconnect() {
+  if (drv.retrying) return;
+  drv.retrying = true; drv.lostSince = drv.lostSince || Date.now();
+  renderDriveView();
+  try {
+    while (drv.on && !state.elm) {
+      if (document.hidden) { await sleep(drv.retryMs); continue; }
+      if (Date.now() - drv.lostSince > drv.offMs) {
+        stopDriveMode(); connectMsg = "Couldn't reach the adapter for 5 minutes, so Drive mode ended. Tap Reconnect to try again."; renderConnect(); return;
+      }
+      if (!connectBusy) {
+        if (drv.kind === "ble" && drv.dev) await connect("ble", { dev: drv.dev, auto: true });
+        else await connect(drv.kind || "ble", { reconnect: true, auto: true });
+      }
+      if (!state.elm) await sleep(drv.retryMs);
+    }
+  } finally { drv.retrying = false; renderDriveView(); }
+}
+function renderDriveView() {
+  const box = $("#driveView");
+  if (!box || box.hidden || !drv.on) return;
+  const big = (k, label) => `<div class="dvv"><b>${esc(P[k] ? num(P[k], V[k]) : "—")}</b><span>${esc(label)}${P[k] && unitOf(P[k]) ? " · " + esc(unitOf(P[k])) : ""}</span></div>`;
+  const f = state.findings || [], top = f.find(x => x.level === "crit") || f[0];
+  const mins = Math.floor((Date.now() - (state.drive ? state.drive.start : drv.since)) / 60000);
+  const stat = !state.elm ? (connectBusy || drv.retrying ? "Reconnecting to the adapter…" : "Not connected")
+    : state.drive ? `Recording this drive · ${mins < 1 ? "under 1 min" : mins + " min"}${state.drive.gapSec >= 1 ? " · " + durText(state.drive.gapSec) + " missed" : ""}`
+    : "Connected · waiting for the engine to start";
+  const alert = top ? `<div class="dvalert ${top.level === "crit" ? "" : "warn"}" role="alert">${esc(top.title)}</div>` : `<div class="dvok">${state.elm ? "No warnings." : ""}</div>`;
+  // Shift a few pixels each minute so the numbers don't burn into the screen.
+  const m = Math.floor(Date.now() / 60000) % 4, dx = [0, 6, 0, -6][m], dy = [0, 6, 12, 6][m];
+  const html = `<div class="dvin" style="transform:translate(${dx}px,${dy}px)">
+    <div class="dvtop"><div><h2 id="driveTitle">Drive mode</h2><div class="dvstat" id="driveStat" role="status">${esc(stat)}</div></div><button class="btn small" type="button" id="driveExit">Leave</button></div>
+    ${alert}
+    <div class="dvgrid">${big("speed", "Speed")}${big("rpm", "Engine")}${big("ect", "Coolant")}${big("batt", "Battery")}</div>
+    <p class="dvstat">Keep the app open and the phone on a charger. If you switch apps, it reconnects when you come back.</p>
+  </div>`;
+  if (html === box.__html) return;
+  const focused = document.activeElement && document.activeElement.id === "driveExit";
+  box.__html = html; box.innerHTML = html;
+  $("#driveExit").onclick = stopDriveMode;
+  if (focused) $("#driveExit").focus();
 }
 
 /* ---------- health: maintenance and part age ---------- */
@@ -3994,11 +4139,24 @@ $("#maintOut").addEventListener("click", e => {
     setTimeout(() => { if (del.isConnected) { delete del.dataset.confirm; del.textContent = "Delete"; } }, 4000);
   }
 });
+// Android freezes timers in the background, so the 10-minute rule is also checked on the way back.
+// Drive mode skips it: the engine-off rule puts the adapter to sleep instead.
 let hiddenTimer = null;
+const BG_MSG = "Disconnected after 10 minutes in the background to save the van's battery.";
 document.addEventListener("visibilitychange", () => {
   clearTimeout(hiddenTimer);
-  if (document.hidden && state.elm && state.mode !== "demo") hiddenTimer = setTimeout(() => disconnect("Disconnected after 10 minutes in the background to save the van's battery."), 600000);
+  if (document.hidden) {
+    drv.hiddenAt = Date.now(); drv.wake = null;   // the browser lets go of the wake lock when hidden
+    if (state.drive) checkpointDrive();
+    if (state.elm && state.mode !== "demo" && !drv.on) hiddenTimer = setTimeout(() => disconnect(BG_MSG), 600000);
+    return;
+  }
+  const away = drv.hiddenAt ? Date.now() - drv.hiddenAt : 0; drv.hiddenAt = null;
+  if (drv.on) driveBack();
+  else if (state.elm && state.mode !== "demo" && away > 600000) disconnect(BG_MSG);
 });
+$("#driveBtn").onclick = startDriveMode;
+finishStaleCheckpoint();
 
 $("#appVer").textContent = APP_VERSION;
 applyEngine(); renderProfiles();
