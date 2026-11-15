@@ -217,19 +217,15 @@ test("demo van syncs to a pretend cloud and never contacts Google", async ({ pag
   expect(cloud.auth).toEqual([]);
 });
 
-test("changes made while connected to the van wait until it disconnects", async ({ page }) => {
+test("changes made while connected to the van sync during the drive", async ({ page }) => {
   const cloud = await fakeGoogle(page.context());
   await page.goto("index.html");
   await seedSync(page, { acct: { email: "owner@example.com" }, token: { v: "tok-x", exp: Date.now() + 3e6 } });
   await connectFakeUsb(page);
-  await expect.poll(() => cloud.writes).toBe(1);   // the sync on opening, before connecting
+  await expect.poll(() => cloud.writes).toBe(1);   // the sync on opening
   await page.evaluate(() => store.set("note:P0300", "Checked plugs"));
-  await page.waitForTimeout(5000);
-  expect(cloudData(cloud)["note:P0300"]).toBeUndefined();
+  await expect.poll(() => cloud.text && cloudData(cloud)["note:P0300"], { timeout: 15000 }).toBe("Checked plugs");
+  expect(await page.evaluate(() => !!state.elm)).toBe(true);   // still connected
   await tab(page, "More");
-  await expect(page.locator("#syncPaused")).toContainText("automatic sync is paused");
-  await expect(page.locator("#syncTip")).toContainText("tap Sync now");
-  await page.locator("#discBtn").click();
   await expect(page.locator("#syncPaused")).toHaveCount(0);
-  await expect.poll(() => cloud.text && cloudData(cloud)["note:P0300"], { timeout: 10000 }).toBe("Checked plugs");
 });
