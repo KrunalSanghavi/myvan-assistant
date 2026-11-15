@@ -19,7 +19,7 @@ Each item is tracked as a GitHub issue, grouped by milestone (`v2.1`, `v2.x`, `v
 - [x] Shareable health report page for a mechanic or a sale listing. ([#10](https://github.com/KrunalSanghavi/myvan-assistant/issues/10))
 - [x] A history screen comparing any reading across drives. ([#11](https://github.com/KrunalSanghavi/myvan-assistant/issues/11))
 - [x] Drive mode: screen stays on and dimmed for the whole drive, reconnects by itself, saves the drive in progress and marks any gaps.
-- [ ] Android app that records every drive in the background with the screen off and starts by itself when the van starts (needs the van).
+- [ ] Android app that records every drive in the background with the screen off and starts by itself when the van starts (needs the van). Architecture: [docs/android-architecture.md](docs/android-architecture.md). ([#85](https://github.com/KrunalSanghavi/myvan-assistant/issues/85))
 - [x] "Ask about my van": plain-English questions answered from your data using an AI model. ([#12](https://github.com/KrunalSanghavi/myvan-assistant/issues/12))
 
 ## Later: deeper coverage (v3)
