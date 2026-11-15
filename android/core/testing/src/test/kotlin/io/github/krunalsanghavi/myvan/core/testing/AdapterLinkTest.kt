@@ -9,6 +9,7 @@ import io.github.krunalsanghavi.myvan.core.obd.LinkStopped
 import io.github.krunalsanghavi.myvan.core.obd.Poller
 import io.github.krunalsanghavi.myvan.core.obd.SafeCommand
 import io.github.krunalsanghavi.myvan.core.obd.connectVan
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -21,6 +22,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** AdapterLink, ElmSession and Poller against the fake demo van, in virtual time. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class AdapterLinkTest {
     private fun TestScope.van(faults: FaultScript = FaultScript.none) =
         FakeVanTransport(backgroundScope, { testScheduler.currentTime }, faults = faults)
