@@ -6,7 +6,8 @@
     "check": "node scripts/check.mjs",
     "test": "npm run check && playwright test",
     "serve": "npx --yes http-server -p 8080 -c-1 .",
-    "csp": "node scripts/csp.mjs --write"
+    "csp": "node scripts/csp.mjs --write",
+    "fixtures": "node scripts/android-fixtures.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
