@@ -1,15 +1,35 @@
 name: Android
 # The Android app in android/ (#85). Fixtures come from index.html, so changes there run this too.
+# Every PR runs the "Android build" gate job (a required check). It builds only when the PR
+# touches Android files, and passes straight away when it doesn't.
 on:
   pull_request:
-    paths: ["android/**", "index.html", "scripts/android-fixtures.mjs", ".github/workflows/android.yml"]
   push:
     branches: [main]
     paths: ["android/**", "index.html", "scripts/android-fixtures.mjs", ".github/workflows/android.yml"]
 permissions:
   contents: read
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.diff.outputs.android }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - id: diff
+        env: { BASE: "${{ github.event.pull_request.base.sha }}" }
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(android/|index\.html$|scripts/android-fixtures\.mjs$|\.github/workflows/android\.yml$)'; then
+            echo "android=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "android=false" >> "$GITHUB_OUTPUT"
+          fi
   build:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.android == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,3 +62,15 @@ jobs:
             android/**/build/reports/
             android/**/build/test-results/
           retention-days: 7
+  gate:
+    name: Android build
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env: { CHANGES: "${{ needs.changes.result }}", BUILD: "${{ needs.build.result }}" }
+        run: |
+          echo "changes=$CHANGES build=$BUILD"
+          case "$CHANGES" in failure|cancelled) exit 1;; esac
+          case "$BUILD" in failure|cancelled) exit 1;; esac
