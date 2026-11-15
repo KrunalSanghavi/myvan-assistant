@@ -32,6 +32,8 @@ Four tabs: **Home, Health, Codes, More**. On a laptop the tabs become a side men
 
 Use a **Bluetooth LE** adapter, such as a Vgate iCar Pro BLE 4.0, Veepeak OBDCheck BLE or OBDLink CX. Older classic-Bluetooth ELM327 adapters can't be reached from a browser. On a laptop, a USB ELM327 adapter also works.
 
+**Drive mode:** tap Start Drive mode on Home while connected. The screen stays on with a dim, nearly black view of speed, engine speed, coolant, battery and any warning, and the whole drive is recorded. If you switch apps or Bluetooth drops, it reconnects by itself when you come back and carries on with the same drive. Any time it couldn't read is shown as "not recorded" in the trip list. After the engine has been off for 5 minutes, Drive mode ends and the adapter goes to sleep. Keep the phone on a charger. A web page can't read the van with the screen off; an Android app for that is next on the roadmap.
+
 Power use: when you disconnect, the app sends `ATLP` to put the adapter into low-power mode. It never disables the adapter's automatic sleep, and it disconnects by itself after 10 minutes in the background. Unplug the adapter if the van will sit for more than a week or two.
 
 ## Install on Android

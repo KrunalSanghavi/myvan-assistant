@@ -20,6 +20,9 @@ for (const scheme of ["light", "dark"]) {
     await connectDemo(page);
     await page.waitForTimeout(1500);   // let live values and sparklines fill in
     await check(page, "Home");
+    await page.getByRole("button", { name: "Start Drive mode" }).click();
+    await check(page, "Drive mode");
+    await page.getByRole("button", { name: "Leave" }).click();
     await page.locator("#homeRows [data-go=readings]").click();
     await check(page, "All readings");
     await page.getByRole("button", { name: "Back" }).click();
